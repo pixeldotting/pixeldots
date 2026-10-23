@@ -1,0 +1,14 @@
+en_US.UTF-8|English (US)
+en_GB.UTF-8|English (UK)
+ru_RU.UTF-8|Russian
+uk_UA.UTF-8|Ukrainian
+de_DE.UTF-8|Deutsch
+fr_FR.UTF-8|Français
+es_ES.UTF-8|Español
+it_IT.UTF-8|Italiano
+pt_BR.UTF-8|Português (Brasil)
+pl_PL.UTF-8|Polski
+tr_TR.UTF-8|Türkçe
+ja_JP.UTF-8|Japanese
+ko_KR.UTF-8|Korean
+zh_CN.UTF-8|Chinese (Simplified)

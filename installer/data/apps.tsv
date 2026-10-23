@@ -1,0 +1,16 @@
+# id|label|nixpkgs attr|unfree(0/1)|default(0/1)
+firefox|Firefox|firefox|0|1
+chromium|Chromium|chromium|0|0
+telegram|Telegram|telegram-desktop|0|0
+discord|Discord|discord|1|0
+spotify|Spotify|spotify|1|0
+mpv|mpv player|mpv|0|1
+vlc|VLC|vlc|0|0
+obsidian|Obsidian|obsidian|1|0
+libreoffice|LibreOffice|libreoffice|0|0
+gimp|GIMP|gimp|0|0
+vscode|VS Code|vscode|1|0
+neovim|Neovim|neovim|0|0
+btop|btop|btop|0|1
+git|Git|git|0|1
+fastfetch|fastfetch|fastfetch|0|1

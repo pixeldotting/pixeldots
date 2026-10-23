@@ -1,2 +1,5 @@
 config/hypr/colors.lua
 *.log
+config/hypr/user.lua
+installer/pixeldots-installer
+installer/pixeldots-installer-headless

@@ -15,7 +15,7 @@
 Material You dotfiles для **NixOS** в духе Caelestia: Hyprland с конфигом на **Lua** (формат 0.55+) и собственный
 шелл на **Quickshell** (QML). Цвета из обоев генерирует **matugen**. Бар, лаунчер, уведомления (попапы и центр),
 центр управления, дашборд, локскрин и меню сессии, OSD, сайдбар, выбор обоев. Дополнительно: kitty, fish, starship,
-GTK/Qt, курсор. Установщик: см. «TODO: УСТАНОВЩИК» (пока не начат).
+GTK/Qt, курсор. Установщик: `installer/` (см. «УСТАНОВЩИК»), написан и проверен без дисплея, на живой системе не запускался.
 
 ## Команды
 
@@ -45,6 +45,12 @@ pixeldots.homeManagerModules.default
 # и:
 programs.material.enable = true;
 programs.material.repoPath = "/home/<user>/pixeldots";            # необязательно: симлинки вне стора, правки без пересборки
+```
+Установщик (`installer/`):
+```sh
+make -C installer headless && cd installer && PD_APPLY=$PWD/tests/fake-apply.sh ./pixeldots-installer-headless data tests/flow.txt   # весь UI-сценарий без дисплея (+ tests/fail.txt, FAKE_FAIL=1)
+PD_DRY_RUN=1 PD_OUT_DIR=/tmp/out PD_NIXOS_DIR=<каталог с configuration.nix> ... bash installer/apply.sh <<< 'пароль'   # только сгенерировать flake
+bash installer/bootstrap.sh [--local] [--software] [--dry-run]   # на настоящей NixOS из TTY: сборка, cage, установка, Hyprland
 ```
 Запуск и отладка на живой системе:
 ```sh
@@ -79,6 +85,8 @@ config/quickshell/material/  весь шелл, 64 QML-файла
   components/              переиспользуемые виджеты (StyledText, StateLayer, Tile, M3Slider ...)
   services/                синглтоны: Audio, Brightness, Network, Notifs, Hypr, Media, Power, Wallpapers, Weather, ...
   modules/                 Drawers + PanelRegion, bar/, dashboard/, launcher/, notifications/, sidebar/, osd/, session/, wallpaper/, controlcenter/, lock/, Idle, Ipc
+installer/                 bootstrap.sh, apply.sh, src/*.cpp (SDL2 UI), data/ (locales, layouts, timezones, apps.tsv), tests/
+nix/installer.nix          пакеты pixeldots-installer (UI) и pixeldots-installer-session (cage + UI)
 wallpapers/aurora.png      стартовые обои (сгенерированы кодом)
 tools/                     harness.lua, qmlcheck.js (самодельные проверки)
 docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
@@ -109,15 +117,36 @@ docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
 4. Шаблоны matugen (v3-синтаксис, имена переменных, флаги `-m`/`-t`) не рендерились.
 5. M3 Expressive не внедрён (пружины, новые радиусы, emphasized-веса): порядок в `docs/M3-EXPRESSIVE.md` §4.
 6. `README.md` не написан.
-7. Установщик не начат.
+7. Установщик (`installer/`) ни разу не запускался на живой NixOS: `nix build .#pixeldots-installer-session`, SDL2 под `cage`, `nixos-rebuild switch` из `apply.sh`, запуск Hyprland после выхода. См. раздел «УСТАНОВЩИК».
 
-## TODO: УСТАНОВЩИК (замысел на будущее, не реализовано)
+## УСТАНОВЩИК (`installer/`)
 
-- **Бутстраппер на `.sh`**: скачивает wayland и зависимости установщика, компилирует его, запускает.
-- **Установщик на C++**: на время работы сам становится композитором, запускается под `cage`.
-- **Первый экран**: первичный сетап в пиксельном стиле; спрашивает часовой пояс и остальное.
-- После ответов ставит приложения и зависимости.
-- По завершении выходит из `cage` в готовый Hyprland + Quickshell.
+Замысел: бутстраппер на `.sh` собирает установщик, C++-установщик работает под `cage`, спрашивает настройки в пиксельном
+стиле, ставит систему и выходит в готовый Hyprland + Quickshell. Реализация:
+
+- `installer/bootstrap.sh`: проверки (не root, NixOS, sudo), берёт чекаут (свой или клонирует в `~/pixeldots`), `sudo -v` с keepalive,
+  `nix build <checkout>#pixeldots-installer-session` (SDL2, cage, wayland тянутся Nix'ом, C++ компилируется там же), запускает
+  `cage -s -- pixeldots-installer`, по коду 0 делает `exec Hyprland` через login-shell (`env -u __NIXOS_SET_ENVIRONMENT_DONE bash -l`).
+  Флаги: `--local` (flake системы берёт этот чекаут, а не github), `--software` (pixman, для ВМ), `--dry-run`.
+- `installer/src/`: `app.cpp/hpp` (экраны и ввод, платформо-независимо), `gfx.hpp` + `font.hpp` (холст 320x180, шрифт 5x7 свой),
+  `main_sdl.cpp` (SDL2, целочисленное масштабирование nearest), `main_headless.cpp` (скриптовый прогон, дамп PPM). Экраны:
+  Welcome, язык, раскладка, часовой пояс (поиск), имя компьютера, пароль (необязательный; пользователь = текущий), приложения
+  (`data/apps.tsv`), вид (dark/light, палитра matugen, автозапуск Hyprland на tty1), сводка, установка (прогресс из строк
+  `@@ <проц> <текст>`), готово / ошибка (Enter = повтор). Только клавиатура, UI только на английском (шрифт ASCII).
+- `installer/apply.sh`: настоящая работа. Ответы приходят в `PD_*` (env), пароль одной строкой через stdin (в argv/env/файлы не попадает,
+  в Nix уходит только sha-512 хеш). Проверяет ответы regex'ами, копирует `configuration.nix` и `hardware-configuration.nix` из
+  `/etc/nixos` в `/etc/nixos/pixeldots/`, генерирует там `flake.nix` и `pixeldots-local.nix` (hostname, tz, locale, xkb, пароль,
+  fish как шелл, приложения, home-manager с `programs.material.repoPath` = чекаут), пишет `config/hypr/user.lua` (раскладка) в
+  чекаут и `~/.local/state/material/state.json`, затем `nixos-rebuild switch --flake path:/etc/nixos/pixeldots#<host>`.
+  Существующие файлы в `/etc/nixos` не трогает. Полный лог: `~/.local/state/pixeldots-installer/install.log`.
+- Решения, которые легко «исправить» по ошибке: установщик настраивает **только текущего пользователя** (имя из `$USER`; нового не создаёт:
+  у чужого `$HOME` не было бы чекаута для `repoPath`); раскладка в установщике всегда `us` (`XKB_DEFAULT_LAYOUT=us`), потому что
+  пароль набирается до применения настроек; `apply.sh` запускается из чекаута, не из стора (отказывается работать из `/nix/store`).
+- Не проверено (нет Nix/SDL2/Wayland/NixOS в песочнице): сборка `nix/installer.nix` (даже не парсился), `main_sdl.cpp` против настоящего SDL2
+  (только синтаксис по самописной заглушке), `cage` и ввод/вывод SDL на Wayland, `nixos-rebuild` и сгенерированные `.nix` (только
+  прочитаны глазами; под вопросом `services.xserver.xkb.*`, `pixeldots.inputs.nixpkgs`/`.home-manager` из внешнего flake, дедупликация
+  `hardware-configuration.nix`, `users.users.<n>.hashedPassword` при `mutableUsers`), `hl.config` в `user.lua` (слияние с `input.lua`),
+  запуск Hyprland после выхода из `cage`.
 
 ## Правила для следующего агента
 

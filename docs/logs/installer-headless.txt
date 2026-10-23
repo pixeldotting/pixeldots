@@ -1,0 +1,10 @@
+$ make -C installer headless && installer/pixeldots-installer-headless installer/data installer/tests/flow.txt   (PD_APPLY=fake-apply.sh)
+make: Entering directory '/home/claude/p/pixeldots/installer'
+g++ -O2 -std=c++17 -Wall -Wextra -Isrc src/app.cpp src/main_headless.cpp -o pixeldots-installer-headless
+make: Leaving directory '/home/claude/p/pixeldots/installer'
+quit=1 exit=0 screen=done
+[exit=0]
+
+$ ... tests/fail.txt (FAKE_FAIL=1): Install -> Failed -> Enter retry -> Failed -> Esc
+quit=1 exit=1 screen=failed
+[exit=0]

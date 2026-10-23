@@ -1,0 +1,10 @@
+enter enter enter enter enter enter enter enter enter enter
+expect:install
+wait:1.5
+shot:/tmp/f1.ppm
+expect:failed
+enter
+expect:install
+wait:1.5
+expect:failed
+esc

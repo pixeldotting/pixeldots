@@ -1,0 +1,20 @@
+bash -n scripts/material-screenshot.sh
+ok
+bash -n scripts/material-theme.sh
+ok
+bash -n installer/apply.sh
+ok
+bash -n installer/bootstrap.sh
+ok
+bash -n installer/tests/fake-apply.sh
+ok
+$ g++ -fsyntax-only installer/src/main_sdl.cpp -I<hand-written SDL2 stub>   (real SDL2 not available: type/typo check only)
+ok
+$ texlua tools/harness.lua config/hypr
+fallback colours (no colors.lua): OK
+  calls: animation=8 bind=92 config=2 curve=5 dsp.exec_cmd=32 dsp.focus=18 dsp.group.next=1 dsp.group.toggle=1 dsp.layout=1 dsp.window.center=1 dsp.window.close=1 dsp.window.drag=1 dsp.window.float=1 dsp.window.fullscreen=2 dsp.window.kill=1 dsp.window.move=25 dsp.window.pin=1 dsp.window.resize=5 dsp.workspace.toggle_special=1 env=16 exec_cmd=5 gesture=1 layer_rule=2 monitor=1 on=1 window_rule=17
+generated colours: OK
+$ node tools/qmlcheck.js config/quickshell/material
+OK: 64 QML files, no problems found
+$ nix-instantiate --parse
+nix-instantiate: NOT AVAILABLE in this sandbox: nix/installer.nix and flake.nix edits were NOT parsed
