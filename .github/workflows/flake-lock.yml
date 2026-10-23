@@ -1,0 +1,63 @@
+name: flake-lock
+
+# Creates flake.lock if it is missing and commits it; optionally updates all inputs.
+# Run by hand: Actions -> flake-lock -> Run workflow (tick "update" to bump inputs).
+# Also runs weekly (bumps inputs) and on every push to main (only creates the lock if absent).
+on:
+  workflow_dispatch:
+    inputs:
+      update:
+        description: "Update all inputs (nix flake update) instead of only creating the lock"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 3 * * 1"
+  push:
+    branches: [main]
+    paths: [flake.nix]
+
+permissions:
+  contents: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create or update flake.lock
+        run: |
+          if [ ! -f flake.lock ]; then
+            nix flake lock
+          elif [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.update }}" = "true" ]; then
+            nix flake update
+          fi
+
+      - name: Check the flake evaluates
+        run: nix flake check --no-build 2>&1 | tee flake-check.log
+
+      - name: Commit flake.lock
+        run: |
+          if [ -n "$(git status --porcelain flake.lock)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add flake.lock
+            git commit -m "flake.lock: update"
+            git push
+          else
+            echo "flake.lock unchanged"
+          fi
+
+      - name: Upload check log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-check-log
+          path: flake-check.log
+          if-no-files-found: ignore
