@@ -1,0 +1,3 @@
+$ node tools/qmlcheck.js config/quickshell/material
+OK: 64 QML files, no problems found
+[exit=0]

@@ -1,0 +1,48 @@
+# matugen: Material You colour generation.
+# `material-theme` runs `matugen image <wallpaper> -m <dark|light> -t <scheme>`.
+# Every template below is re-rendered on each run.
+
+[config]
+
+# Extra hues for terminal "green"/"yellow", harmonised towards the wallpaper's primary colour.
+[config.custom_colors.green]
+color = "#8bc34a"
+blend = true
+
+[config.custom_colors.yellow]
+color = "#ffc107"
+blend = true
+
+# ── Quickshell (reads this file live and animates colour changes) ──────────────
+[templates.shell]
+input_path  = "~/.config/matugen/templates/shell.json"
+output_path = "~/.local/state/material/colors.json"
+
+# ── Hyprland borders / shadows (modules/look.lua requires "colors") ────────────
+[templates.hypr]
+input_path  = "~/.config/matugen/templates/hypr.lua"
+output_path = "~/.config/hypr/colors.lua"
+
+# ── Terminal ───────────────────────────────────────────────────────────────────
+[templates.kitty]
+input_path  = "~/.config/matugen/templates/kitty.conf"
+output_path = "~/.config/kitty/colors.conf"
+post_hook   = "pkill -USR1 -x kitty || true"
+
+[templates.starship]
+input_path  = "~/.config/matugen/templates/starship.toml"
+output_path = "~/.config/starship.toml"
+
+# ── GTK 3 / 4 (libadwaita named colours, imported from gtk.css) ────────────────
+[templates.gtk3]
+input_path  = "~/.config/matugen/templates/gtk.css"
+output_path = "~/.config/gtk-3.0/colors.css"
+
+[templates.gtk4]
+input_path  = "~/.config/matugen/templates/gtk.css"
+output_path = "~/.config/gtk-4.0/colors.css"
+
+# ── Qt 6 (qt6ct custom palette) ────────────────────────────────────────────────
+[templates.qt6ct]
+input_path  = "~/.config/matugen/templates/qt6ct.conf"
+output_path = "~/.config/qt6ct/colors/material.conf"

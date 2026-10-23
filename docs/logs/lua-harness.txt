@@ -1,0 +1,11 @@
+$ texlua tools/harness.lua config/hypr
+fallback colours (no colors.lua): OK
+  calls: animation=8 bind=92 config=2 curve=5 dsp.exec_cmd=32 dsp.focus=18 dsp.group.next=1 dsp.group.toggle=1 dsp.layout=1 dsp.window.center=1 dsp.window.close=1 dsp.window.drag=1 dsp.window.float=1 dsp.window.fullscreen=2 dsp.window.kill=1 dsp.window.move=25 dsp.window.pin=1 dsp.window.resize=5 dsp.workspace.toggle_special=1 env=16 exec_cmd=5 gesture=1 layer_rule=2 monitor=1 on=1 window_rule=17
+generated colours: OK
+  calls: animation=8 bind=92 config=2 curve=5 dsp.exec_cmd=32 dsp.focus=18 dsp.group.next=1 dsp.group.toggle=1 dsp.layout=1 dsp.window.center=1 dsp.window.close=1 dsp.window.drag=1 dsp.window.float=1 dsp.window.fullscreen=2 dsp.window.kill=1 dsp.window.move=25 dsp.window.pin=1 dsp.window.resize=5 dsp.workspace.toggle_special=1 env=16 exec_cmd=5 gesture=1 layer_rule=2 monitor=1 on=1 window_rule=17
+  exec_cmd(dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && systemctl --user start hyprpolkitagent.service)
+  exec_cmd(material-theme init)
+  exec_cmd(qs -c material)
+  exec_cmd(wl-paste --type text  --watch cliphist store)
+  exec_cmd(wl-paste --type image --watch cliphist store)
+[exit=0]

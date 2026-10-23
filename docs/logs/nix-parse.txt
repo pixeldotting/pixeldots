@@ -1,0 +1,10 @@
+$ bash -c for f in flake.nix nix/*.nix; do echo "nix-instantiate --parse $f"; nix-instantiate --parse "$f" >/dev/null && echo ok; done
+nix-instantiate --parse flake.nix
+ok
+nix-instantiate --parse nix/home.nix
+ok
+nix-instantiate --parse nix/nixos.nix
+ok
+nix-instantiate --parse nix/scripts.nix
+ok
+[exit=0]

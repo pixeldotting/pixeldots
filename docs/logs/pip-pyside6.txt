@@ -1,0 +1,9 @@
+$ pip install --break-system-packages PySide6-Essentials
+WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f65f53e1400>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/pyside6-essentials/
+WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f65f55fa850>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/pyside6-essentials/
+WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f65f55faad0>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/pyside6-essentials/
+WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f65f55fad50>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/pyside6-essentials/
+WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f65f55fafd0>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/pyside6-essentials/
+ERROR: Could not find a version that satisfies the requirement PySide6-Essentials (from versions: none)
+ERROR: No matching distribution found for PySide6-Essentials
+[exit=1]

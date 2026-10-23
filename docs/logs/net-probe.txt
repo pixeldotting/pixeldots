@@ -1,0 +1,3 @@
+curl: (56) CONNECT tunnel failed, response 403
+outfoxxed http=000
+github http=403

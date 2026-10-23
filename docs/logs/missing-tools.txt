@@ -1,0 +1,24 @@
+$ command -v qmllint
+(not found)
+$ command -v qmlformat
+(not found)
+$ command -v pyside6-qmllint
+(not found)
+$ command -v lua
+(not found)
+$ command -v luajit
+(not found)
+$ command -v lupa
+(not found)
+$ command -v shellcheck
+(not found)
+$ command -v Hyprland
+(not found)
+$ command -v hyprland
+(not found)
+$ command -v quickshell
+(not found)
+$ command -v qs
+(not found)
+$ command -v matugen
+(not found)

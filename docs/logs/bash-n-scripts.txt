@@ -1,0 +1,6 @@
+$ bash -c for f in scripts/*.sh; do echo "bash -n $f"; bash -n "$f" && echo ok; done
+bash -n scripts/material-screenshot.sh
+ok
+bash -n scripts/material-theme.sh
+ok
+[exit=0]

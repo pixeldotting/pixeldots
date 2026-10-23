@@ -1,0 +1,16 @@
+-- Material 3 motion: emphasized / standard easing + a springy "expressive" curve.
+hl.curve("standard",         { type = "bezier", points = { { 0.2, 0 },    { 0, 1 } } })
+hl.curve("emphasizedDecel",  { type = "bezier", points = { { 0.05, 0.7 }, { 0.1, 1 } } })
+hl.curve("emphasizedAccel",  { type = "bezier", points = { { 0.3, 0 },    { 0.8, 0.15 } } })
+hl.curve("linear",           { type = "bezier", points = { { 0, 0 },      { 1, 1 } } })
+hl.curve("expressive",       { type = "spring", mass = 1, stiffness = 120, dampening = 16 })
+
+-- speed is in deciseconds (1 = 100ms)
+hl.animation({ leaf = "windowsIn",   enabled = true, speed = 4,   spring = "expressive",      style = "popin 85%" })
+hl.animation({ leaf = "windowsOut",  enabled = true, speed = 3,   bezier = "emphasizedAccel", style = "popin 85%" })
+hl.animation({ leaf = "windowsMove", enabled = true, speed = 4,   spring = "expressive" })
+hl.animation({ leaf = "border",      enabled = true, speed = 5,   bezier = "standard" })
+hl.animation({ leaf = "fade",        enabled = true, speed = 3,   bezier = "standard" })
+hl.animation({ leaf = "layers",      enabled = true, speed = 4,   bezier = "emphasizedDecel", style = "fade" })
+hl.animation({ leaf = "workspaces",  enabled = true, speed = 5,   bezier = "emphasizedDecel", style = "slidefade 20%" })
+hl.animation({ leaf = "specialWorkspace", enabled = true, speed = 4, bezier = "emphasizedDecel", style = "slidefadevert 15%" })

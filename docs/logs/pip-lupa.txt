@@ -1,0 +1,9 @@
+$ pip install --break-system-packages lupa
+WARNING: Retrying (Retry(total=4, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f08979bd160>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/lupa/
+WARNING: Retrying (Retry(total=3, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f0897b52490>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/lupa/
+WARNING: Retrying (Retry(total=2, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f0897b52710>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/lupa/
+WARNING: Retrying (Retry(total=1, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f0897b52990>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/lupa/
+WARNING: Retrying (Retry(total=0, connect=None, read=None, redirect=None, status=None)) after connection broken by 'NewConnectionError('<pip._vendor.urllib3.connection.HTTPSConnection object at 0x7f0897b52c10>: Failed to establish a new connection: [Errno -2] Name or service not known')': /simple/lupa/
+ERROR: Could not find a version that satisfies the requirement lupa (from versions: none)
+ERROR: No matching distribution found for lupa
+[exit=1]
