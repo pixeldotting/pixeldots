@@ -1,5 +1,5 @@
 # System-level pieces the desktop needs. Import it next to the home-manager module:
-#   imports = [ material-dots.nixosModules.default ];
+#   imports = [ pixeldots.nixosModules.default ];
 {
   config,
   lib,
@@ -15,7 +15,7 @@
     {
       assertion = lib.versionAtLeast config.programs.hyprland.package.version "0.55";
       message = ''
-        material-dots needs Hyprland >= 0.55 (Lua configuration), but ${config.programs.hyprland.package.version}
+        pixeldots needs Hyprland >= 0.55 (Lua configuration), but ${config.programs.hyprland.package.version}
         is selected. Use nixos-unstable or point programs.hyprland.package at a newer build.
       '';
     }

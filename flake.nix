@@ -1,5 +1,5 @@
 {
-  description = "Material You dotfiles for NixOS: Hyprland (Lua config) + a Caelestia-style Quickshell shell";
+  description = "pixeldots (github:pixeldotting/pixeldots): Material You dotfiles for NixOS: Hyprland (Lua config) + a Caelestia-style Quickshell shell";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";

@@ -39,7 +39,7 @@ in
     repoPath = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      example = "/home/you/material-dots";
+      example = "/home/you/pixeldots";
       description = ''
         Absolute path of a checkout of this repository. When set, ~/.config/hypr and
         ~/.config/quickshell/material are symlinked to it (outside the store) so edits apply

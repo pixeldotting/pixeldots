@@ -1,7 +1,14 @@
-# CLAUDE.md: material-dots
+# CLAUDE.md: pixeldots
 
 Постоянный контекст проекта. Дневника здесь нет: статус по модулям в `PROGRESS.md`, исследование дизайн-системы
 в `docs/M3-EXPRESSIVE.md`, сырые выводы команд в `docs/logs/`. Язык общения с владельцем: русский.
+
+## Репозиторий и имена
+
+- GitHub: **github.com/pixeldotting/pixeldots** (`git remote add origin git@github.com:pixeldotting/pixeldots.git`). Каталог чекаута называть `pixeldots` (архивы собираются с `pixeldots/` внутри).
+- Flake-вход: `github:pixeldotting/pixeldots`. Выходов `nixosConfigurations` нет, только модули (`nixosModules.default`, `homeManagerModules.default`) и пакеты, так что имя каталога на сборку не влияет.
+- Имена `programs.material`, `qs -c material`, namespace `material-*` остаются как есть: это имя шелла, не репозитория.
+- В логах `docs/logs/` и `PROGRESS.md` встречается старый путь `material-dots`: это сырой вывод, не править.
 
 ## Что это
 
@@ -29,14 +36,15 @@ nix fmt                              # nixfmt-rfc-style
 ```
 Подключение из flake пользователя:
 ```nix
-inputs.material-dots.url = "path:/home/<user>/material-dots";   # или github:...
+inputs.pixeldots.url = "github:pixeldotting/pixeldots";          # или "path:/home/<user>/pixeldots" для локального чекаута
+inputs.pixeldots.inputs.nixpkgs.follows = "nixpkgs";
 # в nixosSystem.modules:
-material-dots.nixosModules.default                               # Hyprland>=0.55, pipewire, NM, bluetooth, upower, polkit, portals
+pixeldots.nixosModules.default                                  # Hyprland>=0.55, pipewire, NM, bluetooth, upower, polkit, portals
 # в home-manager.users.<user>.imports:
-material-dots.homeManagerModules.default
+pixeldots.homeManagerModules.default
 # и:
 programs.material.enable = true;
-programs.material.repoPath = "/home/<user>/material-dots";       # необязательно: симлинки вне стора, правки без пересборки
+programs.material.repoPath = "/home/<user>/pixeldots";            # необязательно: симлинки вне стора, правки без пересборки
 ```
 Запуск и отладка на живой системе:
 ```sh
