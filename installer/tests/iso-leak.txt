@@ -1,0 +1,31 @@
+# A password hash printed by the backend must never reach the on-screen log.
+expect:welcome
+enter
+enter enter enter enter
+expect:account
+type:bob
+down
+type:secret99
+down
+type:secret99
+enter
+expect:apps
+enter
+expect:look
+enter
+expect:disk
+down
+type:_
+enter
+enter
+type:_
+enter
+expect:install
+wait:1.2
+assertlog:Installing
+assertnolog:LEAKEDHASH
+assertlog:hash_hidden
+shot:/tmp/n02_leak.ppm
+wait:1.0
+expect:done
+enter

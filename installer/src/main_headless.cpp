@@ -2,6 +2,7 @@
 //   pixeldots-installer-headless <data-dir> <script-file>
 // tokens (whitespace separated): up down left right enter esc bksp tab pgup pgdn home end
 //   type:<text>   wait:<seconds>   shot:<file.ppm>   expect:<screen>   (expect aborts with exit 3 on mismatch)
+//   assertlog:<text> / assertnolog:<text>   check the Install log lines (exit 4 on failure)
 //   click:<x>,<y> window pixels   clicku:<x>,<y> design units (1080x1500)   wheel:<+-n>
 // window size from env PD_SIZE (default 1600x900)
 #include <chrono>
@@ -21,6 +22,7 @@ static const char* name(Scr s) {
         case Scr::Timezone: return "timezone"; case Scr::Hostname: return "hostname"; case Scr::Account: return "account";
         case Scr::Apps: return "apps"; case Scr::Look: return "look"; case Scr::Summary: return "summary";
         case Scr::Install: return "install"; case Scr::Done: return "done"; case Scr::Failed: return "failed";
+        case Scr::Disk: return "disk"; case Scr::Erase: return "erase";
     }
     return "?";
 }
@@ -67,6 +69,11 @@ int main(int argc, char** argv) {
             for (int i = 0; i < n; i++) app.draw(cv);  // background cached: UI cost only
             double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count() / n;
             std::printf("ui-only %dx%d: %.1f ms/frame\n", cv.w, cv.h, ms);
+        } else if (cmd == "assertlog" || cmd == "assertnolog") {  // substring (underscore = space) must be in / absent from the log
+            for (auto& ch : arg) if (ch == '_') ch = ' ';
+            bool found = false;
+            for (auto& l : app.logLines()) found = found || l.find(arg) != std::string::npos;
+            if (found != (cmd == "assertlog")) { std::fprintf(stderr, "%s failed for '%s'\n", cmd.c_str(), arg.c_str()); return 4; }
         } else if (cmd == "wheel") {
             app.wheel(std::stoi(arg));
         } else if (cmd == "shot") {

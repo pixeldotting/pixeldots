@@ -1,0 +1,21 @@
+# ISO mode, no usable disk / not UEFI: the wizard must refuse to go on and say why.
+expect:welcome
+enter
+enter enter enter enter
+expect:account
+type:bob
+down
+type:secret99
+down
+type:secret99
+enter
+expect:apps
+enter
+expect:look
+enter
+expect:disk
+shot:/tmp/n01_disk_error.ppm
+enter
+expect:disk
+click:5,5
+expect:disk

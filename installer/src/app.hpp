@@ -29,7 +29,8 @@ struct ListView {
     Item* selMut() { return vis.empty() ? nullptr : &items[vis[cur]]; }
 };
 
-enum class Scr { Welcome, Locale, Layout, Timezone, Hostname, Account, Apps, Look, Summary, Install, Done, Failed };
+// Disk and Erase exist only in ISO mode (PD_ISO=1); they are appended so the numbering of the older screens (background poses) is unchanged.
+enum class Scr { Welcome, Locale, Layout, Timezone, Hostname, Account, Apps, Look, Summary, Install, Done, Failed, Disk, Erase };
 
 class App {
 public:
@@ -48,6 +49,7 @@ public:
     int exitCode = 0;  // 0 = installed, desktop can start; 1 = aborted or failed
 
     Scr screen() const { return scr; }
+    const std::vector<std::string>& logLines() const { return log; }  // for tests: what the Install screen would show
     float lastU = 1, lastOx = 0, lastOy = 0;  // layout of the last drawn frame (tests convert design units to pixels)
 
 private:
@@ -58,9 +60,17 @@ private:
     int lookRow = 0, modeIdx = 0, variantIdx = 0;
     bool autostart = true;
     bool showInfo = false;
+
+    // ISO mode (PD_ISO=1): the installer runs from the live image and installs onto a disk the user picks.
+    bool iso = false;
+    ListView disks;            // items: id = kernel name (sda), label = model, attr = "size_bytes|transport|removable"
+    std::string diskPick;      // name of the disk the user explicitly chose; empty = none (there is NO default)
+    std::string diskErr;       // why no disk can be offered (not UEFI, nothing suitable, ...)
+    bool eraseOn = false;      // the "I understand" switch on the Erase screen, always starts off
+    std::string disksCmd;
     Font font;
     Background bg;
-    enum Act { HNext, HBack, HQuit, HInfo, HInfoClose, HRow, HApp, HMode, HVariant, HAuto, HField };
+    enum Act { HNext, HBack, HQuit, HInfo, HInfoClose, HRow, HApp, HMode, HVariant, HAuto, HField, HDisk, HErase };
     struct Hit { float x, y, w, h; Act act; int arg; };
     std::vector<Hit> hits;
     Canvas* cv = nullptr;  // frame context while drawing
@@ -93,6 +103,10 @@ private:
 
     void advance();
     int step() const;
+    std::string stepText() const;
+    void loadDisks();
+    const Item* pickedDisk() const;
+    std::string& fieldRef();
     // drawing helpers, all in design units
     float PX(float v) const { return ox + v * u; }
     float PY(float v) const { return oy + v * u; }
@@ -109,7 +123,7 @@ private:
     void iconSearch(float cx, float cy, float s, uint32_t col);
     void topBar(const std::string& left);
     void titleBlock(const std::string& title, const std::string& sub);
-    void bottomBar(int left /*0 none, 1 back, 2 quit*/, const std::string& label);
+    void bottomBar(int left /*0 none, 1 back, 2 quit*/, const std::string& label, uint32_t fill = pal::primary, uint32_t fg = pal::onPrimary);
     void sw(float x, float y, bool on);
     void drawField(float y, const std::string& label, const std::string& val, bool secret, bool active, int idx);
     void fitRows(ListView& l, int base);
@@ -123,5 +137,7 @@ private:
     void drawInstall();
     void drawDone();
     void drawFailed();
+    void drawDisk();
+    void drawErase();
     void drawInfo();
 };

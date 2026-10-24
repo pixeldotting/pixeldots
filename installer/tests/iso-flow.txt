@@ -1,0 +1,65 @@
+# ISO mode: no default user, no default disk, explicit confirmation before anything is erased.
+expect:welcome
+shot:/tmp/i01_welcome.ppm
+enter
+expect:locale
+enter enter enter enter
+expect:account
+shot:/tmp/i02_account_empty.ppm
+enter enter enter
+expect:account
+shot:/tmp/i03_account_err_user.ppm
+up up
+type:Alice_1
+down
+type:abc
+down
+type:abc
+shot:/tmp/i04_account_filled.ppm
+enter
+expect:account
+shot:/tmp/i05_account_err_short.ppm
+up
+bksp bksp bksp
+type:secret99
+down
+bksp bksp bksp
+type:secret99
+enter
+expect:apps
+enter
+expect:look
+enter
+expect:disk
+shot:/tmp/i06_disk_none_chosen.ppm
+enter
+expect:disk
+shot:/tmp/i07_disk_needs_choice.ppm
+down
+type:_
+shot:/tmp/i08_disk_chosen.ppm
+enter
+expect:summary
+shot:/tmp/i09_summary.ppm
+enter
+expect:erase
+shot:/tmp/i10_erase_off.ppm
+enter
+expect:erase
+shot:/tmp/i11_erase_not_confirmed.ppm
+type:_
+shot:/tmp/i12_erase_on.ppm
+# going back resets the confirmation: Enter must refuse until the switch is turned on again
+esc
+expect:summary
+enter
+expect:erase
+enter
+expect:erase
+type:_
+enter
+expect:install
+wait:2.0
+expect:done
+shot:/tmp/i13_done.ppm
+enter

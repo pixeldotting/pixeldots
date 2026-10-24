@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <fcntl.h>
 #include <fstream>
@@ -55,6 +56,25 @@ std::string currentZone() {
         if (i != std::string::npos) return p.substr(i + 9);
     }
     return "UTC";
+}
+
+// Same rules as the backend (installer/install-iso.sh checks them again before anything is written).
+bool userOk(const std::string& u) {
+    if (u.empty() || u.size() > 32 || u == "root") return false;
+    if (!(std::islower((unsigned char)u[0]) || u[0] == '_')) return false;
+    for (char ch : u)
+        if (!(std::islower((unsigned char)ch) || std::isdigit((unsigned char)ch) || ch == '_' || ch == '-')) return false;
+    return true;
+}
+
+std::string humanSize(unsigned long long b) {
+    const char* unit[] = {"B", "KiB", "MiB", "GiB", "TiB"};
+    double v = (double)b;
+    int i = 0;
+    while (v >= 1024 && i < 4) { v /= 1024; i++; }
+    char buf[32];
+    std::snprintf(buf, sizeof buf, i >= 3 ? "%.1f %s" : "%.0f %s", v, unit[i]);
+    return buf;
 }
 
 bool hostOk(const std::string& h) {
@@ -129,7 +149,9 @@ App::App(const std::string& dataDir) {
     locales.select(getenvOr("PD_DEFAULT_LOCALE", "en_US.UTF-8"));
     layouts.select(getenvOr("PD_DEFAULT_LAYOUT", "us"));
     if (!zones.select(getenvOr("PD_DEFAULT_TZ", currentZone()))) zones.select("UTC");
-    user = getenvOr("PD_DEFAULT_USER", getenvOr("USER", "user"));
+    iso = getenvOr("PD_ISO", "") == "1";
+    user = iso ? "" : getenvOr("PD_DEFAULT_USER", getenvOr("USER", "user"));  // ISO: the new user's name is typed, never defaulted
+    disksCmd = getenvOr("PD_DISKS_CMD", "pixeldots-disks");
     applyPath = getenvOr("PD_APPLY", dataDir + "/../apply.sh");
     logPath = getenvOr("PD_LOG", "");
 }
@@ -185,6 +207,66 @@ int App::step() const {
     }
 }
 
+std::string App::stepText() const {
+    int n = 0;
+    switch (scr) {
+        case Scr::Locale: n = 1; break;
+        case Scr::Layout: n = 2; break;
+        case Scr::Timezone: n = 3; break;
+        case Scr::Hostname: n = 4; break;
+        case Scr::Account: n = 5; break;
+        case Scr::Apps: n = 6; break;
+        case Scr::Look: n = 7; break;
+        case Scr::Disk: n = 8; break;
+        case Scr::Summary: n = iso ? 9 : 8; break;
+        case Scr::Erase: n = 10; break;
+        default: return "pixeldots";
+    }
+    return "Step " + std::to_string(n) + " of " + (iso ? "10" : "8");
+}
+
+std::string& App::fieldRef() {
+    if (iso) return field == 0 ? user : field == 1 ? pw1 : pw2;
+    return field == 0 ? pw1 : pw2;
+}
+
+const Item* App::pickedDisk() const {
+    for (auto& it : disks.items)
+        if (it.id == diskPick) return &it;
+    return nullptr;
+}
+
+// Disks come from `pixeldots-disks` (installer/disks.sh): one "name|model|size_bytes|transport|removable" per line,
+// or a single "ERR|message". The UI only ever offers what that script prints, the backend asks it again.
+void App::loadDisks() {
+    disks.items.clear();
+    diskErr.clear();
+    if (FILE* p = popen(disksCmd.c_str(), "r")) {
+        char line[512];
+        while (std::fgets(line, sizeof line, p)) {
+            std::string l = line;
+            while (!l.empty() && (l.back() == '\n' || l.back() == '\r')) l.pop_back();
+            auto f = split(l, '|');
+            if (f.size() >= 2 && f[0] == "ERR") { diskErr = f[1]; continue; }
+            if (f.size() < 5) continue;
+            bool nameOk = !f[0].empty();
+            for (char ch : f[0]) nameOk = nameOk && (std::islower((unsigned char)ch) || std::isdigit((unsigned char)ch));
+            if (!nameOk) continue;  // never show or pass on a name that is not a plain kernel device name
+            Item it;
+            it.id = f[0];
+            for (char ch : f[1]) it.label += (ch >= 32 && ch <= 126 && ch != '|') ? ch : '?';
+            it.attr = f[2] + "|" + f[3] + "|" + f[4];
+            disks.items.push_back(it);
+        }
+        pclose(p);
+    } else {
+        diskErr = "Could not list disks.";
+    }
+    disks.refilter();
+    if (!pickedDisk()) diskPick.clear();  // the chosen disk vanished: choose again
+    if (disks.items.empty() && diskErr.empty()) diskErr = "No suitable disk found (it must be 20 GiB or more and not the installation medium).";
+}
+
 // What the primary button / Enter does on the current screen.
 void App::advance() {
     switch (scr) {
@@ -196,7 +278,19 @@ void App::advance() {
             if (validate()) next();
             break;
         case Scr::Apps: case Scr::Look: next(); break;
+        case Scr::Disk:
+            if (validate()) next();
+            break;
         case Scr::Summary:
+            if (iso) { go(Scr::Erase); break; }  // ISO: erasing needs its own confirmation screen
+            go(Scr::Install);
+            if (!startInstall()) go(Scr::Failed);
+            break;
+        case Scr::Erase:
+            if (!eraseOn) { err = "Turn the switch on to confirm."; break; }
+            go(Scr::Install);
+            if (!startInstall()) go(Scr::Failed);
+            break;
         case Scr::Failed:
             go(Scr::Install);
             if (!startInstall()) go(Scr::Failed);
@@ -212,10 +306,14 @@ void App::next() {
         case Scr::Locale: go(Scr::Layout); break;
         case Scr::Layout: go(Scr::Timezone); break;
         case Scr::Timezone: go(Scr::Hostname); break;
-        case Scr::Hostname: go(Scr::Account); break;
+        case Scr::Hostname: field = 0; go(Scr::Account); break;
         case Scr::Account: go(Scr::Apps); break;
         case Scr::Apps: go(Scr::Look); break;
-        case Scr::Look: go(Scr::Summary); break;
+        case Scr::Look:
+            if (iso) { loadDisks(); go(Scr::Disk); }
+            else go(Scr::Summary);
+            break;
+        case Scr::Disk: go(Scr::Summary); break;
         default: break;
     }
 }
@@ -229,7 +327,9 @@ void App::back() {
         case Scr::Account: go(Scr::Hostname); break;
         case Scr::Apps: go(Scr::Account); break;
         case Scr::Look: go(Scr::Apps); break;
-        case Scr::Summary: go(Scr::Look); break;
+        case Scr::Disk: go(Scr::Look); break;
+        case Scr::Summary: go(iso ? Scr::Disk : Scr::Look); break;
+        case Scr::Erase: eraseOn = false; go(Scr::Summary); break;
         default: break;
     }
 }
@@ -240,6 +340,16 @@ bool App::validate() {
             err = "Use letters, digits and '-' (max 63, no leading/trailing '-').";
             return false;
         }
+    } else if (scr == Scr::Disk) {
+        if (!diskErr.empty() && disks.items.empty()) { err = diskErr; return false; }
+        if (!pickedDisk()) { err = "Choose a disk first: Space or click on it."; return false; }
+    } else if (scr == Scr::Account && iso) {
+        if (!userOk(user)) {
+            err = "User name: a-z, 0-9, '_' or '-', start with a letter (max 32).";
+            return false;
+        }
+        if (pw1.size() < 6) { err = "Password is too short (6+ characters)."; return false; }
+        if (pw1 != pw2) { err = "Passwords do not match."; return false; }
     } else if (scr == Scr::Account) {
         if (pw1.empty() && pw2.empty()) return true;  // keep the current password
         if (pw1.size() < 4) {
@@ -304,17 +414,29 @@ void App::key(K k) {
             if (k == K::Enter) advance();
             if (k == K::Esc) back();
             break;
-        case Scr::Account:
+        case Scr::Account: {
+            const int nf = iso ? 3 : 2;
             if (k == K::Backspace) {
-                std::string& f = field == 0 ? pw1 : pw2;
+                std::string& f = fieldRef();
                 if (!f.empty()) f.pop_back();
             }
-            if (k == K::Up || (k == K::Tab && field == 1)) field = 0;
-            if (k == K::Down || (k == K::Tab && field == 0)) field = 1;
+            if (k == K::Up) field = std::max(0, field - 1);
+            if (k == K::Down) field = std::min(nf - 1, field + 1);
+            if (k == K::Tab) field = (field + 1) % nf;
             if (k == K::Enter) {
-                if (field == 0) field = 1;
+                if (field < nf - 1) field++;
                 else advance();
             }
+            if (k == K::Esc) back();
+            break;
+        }
+        case Scr::Disk:
+            if (k == K::Enter) advance();
+            else if (k == K::Esc) back();
+            else listKey(disks, k);
+            break;
+        case Scr::Erase:
+            if (k == K::Enter) advance();
             if (k == K::Esc) back();
             break;
         case Scr::Look:
@@ -364,12 +486,19 @@ void App::click(float x, float y) {
             case HVariant: lookRow = 1; variantIdx = it->arg; break;
             case HAuto: lookRow = 2; autostart = !autostart; break;
             case HField: field = it->arg; break;
+            case HDisk:
+                disks.cur = it->arg;
+                if (it->arg >= 0 && it->arg < (int)disks.items.size()) diskPick = disks.items[it->arg].id;
+                err.clear();
+                break;
+            case HErase: eraseOn = !eraseOn; err.clear(); break;
         }
         return;
     }
 }
 
 void App::wheel(int dy) {
+    if (scr == Scr::Disk) { disks.move(dy > 0 ? -1 : 1); return; }
     if (ListView* l = activeList()) l->move(dy > 0 ? -1 : 1);
 }
 
@@ -385,9 +514,18 @@ void App::text(const std::string& s) {
                 if (Item* it = apps.selMut()) it->on = !it->on;
         } else if (scr == Scr::Hostname) {
             if ((std::isalnum((unsigned char)ch) || ch == '-') && host.size() < 63) host += ch;
+        } else if (scr == Scr::Disk) {
+            if (ch == ' ' && !disks.vis.empty()) { diskPick = disks.items[disks.vis[disks.cur]].id; err.clear(); }  // explicit choice only
+        } else if (scr == Scr::Erase) {
+            if (ch == ' ') { eraseOn = !eraseOn; err.clear(); }
         } else if (scr == Scr::Account) {
-            std::string& f = field == 0 ? pw1 : pw2;
-            if (f.size() < 64) f += ch;
+            std::string& f = fieldRef();
+            if (iso && field == 0) {  // user name: lower-case letters, digits, _ and -
+                char c = (char)std::tolower((unsigned char)ch);
+                if ((std::islower((unsigned char)c) || std::isdigit((unsigned char)c) || c == '_' || c == '-') && f.size() < 32) f += c;
+            } else if (f.size() < 64) {
+                f += ch;
+            }
         } else if (scr == Scr::Look && ch == ' ') {
             key(K::Right);
         }
@@ -415,16 +553,34 @@ bool App::startInstall() {
         dup2(out[1], 1);
         dup2(out[1], 2);
         close(in[0]); close(in[1]); close(out[0]); close(out[1]);
-        setenv("PD_LOCALE", selId(locales).c_str(), 1);
-        setenv("PD_LAYOUT", selId(layouts).c_str(), 1);
-        setenv("PD_TZ", selId(zones).c_str(), 1);
-        setenv("PD_HOSTNAME", host.c_str(), 1);
-        setenv("PD_USER", user.c_str(), 1);
-        setenv("PD_APPS", appIds().c_str(), 1);
-        setenv("PD_MODE", MODES[modeIdx], 1);
-        setenv("PD_VARIANT", (std::string("scheme-") + VARIANTS[variantIdx]).c_str(), 1);
-        setenv("PD_AUTOSTART", autostart ? "1" : "0", 1);
-        execlp("bash", "bash", applyPath.c_str(), (char*)nullptr);
+        std::vector<std::pair<std::string, std::string>> envs = {
+            {"PD_LOCALE", selId(locales)}, {"PD_LAYOUT", selId(layouts)}, {"PD_TZ", selId(zones)},
+            {"PD_HOSTNAME", host}, {"PD_USER", user}, {"PD_APPS", appIds()}, {"PD_MODE", MODES[modeIdx]},
+            {"PD_VARIANT", std::string("scheme-") + VARIANTS[variantIdx]}, {"PD_AUTOSTART", autostart ? "1" : "0"}};
+        if (iso) {
+            const Item* d = pickedDisk();
+            std::string sz = d ? split(d->attr, '|')[0] : "";
+            envs.push_back({"PD_DISK", d ? d->id : ""});
+            envs.push_back({"PD_DISK_MODEL", d ? d->label : ""});
+            envs.push_back({"PD_DISK_SIZE", sz});
+            envs.push_back({"PD_ERASE_CONFIRM", eraseOn && d ? d->id : ""});  // set only after the Erase screen was confirmed
+        }
+        if (iso) {
+            // The UI runs as the live user; the installer needs root. Values go through `env` (none of them is secret),
+            // the password stays on stdin. PD_TEST_NO_SUDO exists for the headless tests only.
+            std::vector<std::string> a;
+            if (getenvOr("PD_TEST_NO_SUDO", "") != "1") { a.push_back("sudo"); a.push_back("-n"); }
+            a.push_back("env");
+            for (auto& kv : envs) a.push_back(kv.first + "=" + kv.second);
+            a.push_back(applyPath);
+            std::vector<char*> av;
+            for (auto& x : a) av.push_back(const_cast<char*>(x.c_str()));
+            av.push_back(nullptr);
+            execvp(av[0], av.data());
+        } else {
+            for (auto& kv : envs) setenv(kv.first.c_str(), kv.second.c_str(), 1);
+            execlp("bash", "bash", applyPath.c_str(), (char*)nullptr);
+        }
         _exit(127);
     }
     close(in[0]);
@@ -461,6 +617,10 @@ void App::consume() {
             else if (ch >= 128) l += '?';
         }
         if (l.empty()) continue;
+        for (size_t pos; (pos = l.find("$6$")) != std::string::npos;) {  // defence in depth: a hash must never reach the screen
+            size_t e = l.find_first_of(" \"'", pos);
+            l = l.substr(0, pos) + "[hash hidden]" + (e == std::string::npos ? "" : l.substr(e));
+        }
         if (l.compare(0, 3, "@@ ") == 0) {
             std::istringstream is(l.substr(3));
             int v = 0;
@@ -567,7 +727,7 @@ void App::titleBlock(const std::string& title, const std::string& sub) {
     if (!sub.empty()) txt(72, 372, fit(sub, 38, 936), 38, pal::dim);
 }
 
-void App::bottomBar(int left, const std::string& label) {
+void App::bottomBar(int left, const std::string& label, uint32_t fill, uint32_t fg) {
     const float y = 1238 + bs, h = 190;
     float rx = 72, rw = 936;
     if (left) {
@@ -578,10 +738,10 @@ void App::bottomBar(int left, const std::string& label) {
         rx = 412;
         rw = 596;
     }
-    rr(rx, y, rw, h, 95, pal::primary);
+    rr(rx, y, rw, h, 95, fill);
     float lw = tw(label, 48), total = lw + 30 + 68, sx = rx + rw / 2 - total / 2;
-    txt(sx, y + h / 2, label, 48, pal::onPrimary, 0.4f);
-    arrow(sx + lw + 30 + 30, y + h / 2, 30, pal::onPrimary, 12, true);
+    txt(sx, y + h / 2, label, 48, fg, 0.4f);
+    arrow(sx + lw + 30 + 30, y + h / 2, 30, fg, 12, true);
     hit(rx, y, rw, h, HNext);
 }
 
@@ -692,12 +852,12 @@ void App::drawApps() {
 void App::drawWelcome() {
     topBar("pixeldots");
     txt(540, 1000 + bs, "Hi there", 210, pal::text, 0.4f, 1);
-    txt(540, 1150 + bs, "Let's set up your desktop", 44, pal::dim, 0, 1);
+    txt(540, 1150 + bs, iso ? "Install pixeldots on this computer" : "Let's set up your desktop", 44, pal::dim, 0, 1);
     bottomBar(2, "Start");
 }
 
 void App::drawHost() {
-    topBar("Step 4 of 8");
+    topBar(stepText());
     titleBlock("Computer name", "The name this computer shows on the network");
     drawField(500, "Name", host, false, true, 0);
     if (!err.empty()) txt(112, 690, fit(err, 34, 860), 34, pal::error);
@@ -706,7 +866,17 @@ void App::drawHost() {
 }
 
 void App::drawAccount() {
-    topBar("Step 5 of 8");
+    topBar(stepText());
+    if (iso) {
+        titleBlock("Your account", "Name and password for the new user");
+        drawField(450, "User name", user, false, field == 0, 0);
+        drawField(600, "Password", pw1, true, field == 1, 1);
+        drawField(750, "Repeat password", pw2, true, field == 2, 2);
+        if (!err.empty()) txt(112, 940, fit(err, 34, 860), 34, pal::error);
+        else txt(112, 940, "6+ characters. Typed with the US layout here", 34, pal::dim);
+        bottomBar(1, "Next");
+        return;
+    }
     titleBlock("Password", "Leave both empty to keep your current one");
     rr(72, 424, 936, 110, 40, pal::card, 0.95f);
     cv->circle(PX(72 + 70), PY(479), 34 * u, pal::primary);
@@ -721,7 +891,7 @@ void App::drawAccount() {
 }
 
 void App::drawLook() {
-    topBar("Step 7 of 8");
+    topBar(stepText());
     titleBlock("Look", "Colours come from your wallpaper, change them later");
     auto label = [&](float y, const char* s, int row) { txt(80, y, s, 32, lookRow == row ? pal::primary : pal::dim, lookRow == row ? 0.4f : 0); };
     label(440, "Mode", 0);
@@ -752,12 +922,13 @@ void App::drawLook() {
 }
 
 void App::drawSummary() {
-    topBar("Step 8 of 8");
-    titleBlock("Ready?", "Check everything, then install");
+    topBar(stepText());
+    titleBlock("Ready?", iso ? "Check everything, then continue" : "Check everything, then install");
     int napps = 0;
     for (auto& a : apps.items) napps += a.on;
     struct Row { const char* k; std::string v; };
-    Row rows[] = {
+    const Item* pd = pickedDisk();
+    std::vector<Row> rows = {
         {"Language", selLabel(locales)},
         {"Keyboard", selLabel(layouts)},
         {"Time zone", selId(zones)},
@@ -767,20 +938,23 @@ void App::drawSummary() {
         {"Look", std::string(MODES[modeIdx]) + ", " + VARIANTS[variantIdx]},
         {"Desktop", autostart ? "starts on tty1 login" : "start Hyprland by hand"},
     };
+    if (iso) rows.push_back({"Disk", pd ? pd->label + ", " + humanSize(std::strtoull(split(pd->attr, '|')[0].c_str(), nullptr, 10)) : "?"});
     rr(72, 424, 936, 700, 48, pal::card, 0.95f);
-    for (int i = 0; i < 8; i++) {
-        float y = 424 + 44 + i * 78;
+    float pitch = iso ? 72.f : 78.f;
+    for (size_t i = 0; i < rows.size(); i++) {
+        float y = 424 + 44 + i * pitch;
         txt(112, y, rows[i].k, 32, pal::dim);
         txt(340, y, fit(rows[i].v, 40, 630), 40, pal::text);
     }
-    txt(80, 1175, "Runs nixos-rebuild switch: needs network, takes a while", 30, pal::warn);
-    bottomBar(1, "Install");
+    if (iso) txt(80, 1175, "Nothing is erased until you confirm on the next screen", 30, pal::warn);
+    else txt(80, 1175, "Runs nixos-rebuild switch: needs network, takes a while", 30, pal::warn);
+    bottomBar(1, iso ? "Continue" : "Install");
 }
 
 void App::drawInstall() {
     topBar("pixeldots");
     txt(72, 285, "Installing", 104, pal::text, 0.5f);
-    txt(72, 372, "Do not turn the computer off", 38, pal::dim);
+    txt(72, 372, iso && pickedDisk() ? "Installing to " + pickedDisk()->label + ". Do not turn the computer off" : "Do not turn the computer off", 38, pal::dim);
     txt(540, 600, std::to_string(pct) + "%", 260, pal::primary, 0.4f, 1);
     rr(72, 790, 936, 48, 24, pal::card, 0.95f);
     float fw = std::max(48.f, 936.f * pct / 100.f);
@@ -794,20 +968,97 @@ void App::drawInstall() {
 void App::drawDone() {
     topBar("pixeldots");
     txt(540, 960 + bs, "All set", 210, pal::text, 0.4f, 1);
-    txt(540, 1110 + bs, "Your desktop is installed", 44, pal::dim, 0, 1);
-    bottomBar(0, "Start desktop");
+    txt(540, 1110 + bs, iso ? "Remove the installation medium, then restart" : "Your desktop is installed", 44, pal::dim, 0, 1);
+    bottomBar(0, iso ? "Restart" : "Start desktop");
 }
 
 void App::drawFailed() {
     topBar("pixeldots");
     txt(72, 285, "Install failed", 104, pal::text, 0.5f);
-    txt(72, 372, "Nothing is undone. Fix the problem and retry", 38, pal::dim);
+    txt(72, 372, iso ? "The disk may be partly written. Fix the problem and retry" : "Nothing is undone. Fix the problem and retry", 38, pal::dim);
     rr(72, 424, 936, 740, 48, pal::errorCard, 0.97f);
     txt(112, 480, fit(msg.empty() ? "The install script failed" : msg, 40, 860), 40, pal::error, 0.3f);
     int n = (int)log.size(), rows = 12, first = std::max(0, n - rows);
     for (int i = first; i < n; i++) txt(112, 548 + (i - first) * 48, fit(log[i], 28, 860), 28, pal::text, 0, 0, 0.85f);
     if (!logPath.empty()) txt(112, 1124, fit("Log: " + logPath, 26, 860), 26, pal::dim);
     bottomBar(2, "Retry");
+}
+
+void App::drawDisk() {
+    topBar(stepText());
+    titleBlock("Disk", "Pick where to install. Nothing is chosen yet");
+    if (disks.items.empty()) {
+        rr(72, 424, 936, 300, 48, pal::errorCard, 0.97f);
+        txt(112, 490, "Can't install here", 44, pal::error, 0.3f);
+        std::string e = diskErr, l2;
+        std::string l1 = fit(e, 32, 860);
+        if (l1.size() < e.size() || tw(e, 32) > 860) {  // wrap on a space near the middle
+            size_t cut = e.rfind(' ', e.size() / 2 + 8);
+            if (cut != std::string::npos) { l1 = e.substr(0, cut); l2 = e.substr(cut + 1); }
+        }
+        txt(112, 560, fit(l1, 32, 860), 32, pal::text);
+        if (!l2.empty()) txt(112, 604, fit(l2, 32, 860), 32, pal::text);
+        bottomBar(1, "Next");
+        return;
+    }
+    const float rh = 128, pitch = 140, y0 = 430;
+    disks.rows = 4 + (int)(bs / pitch);
+    int n = (int)disks.vis.size();
+    disks.top = std::max(0, std::min(disks.top, n - disks.rows));
+    if (disks.cur < disks.top) disks.top = disks.cur;
+    if (disks.cur >= disks.top + disks.rows) disks.top = disks.cur - disks.rows + 1;
+    for (int r = 0; r < disks.rows; r++) {
+        int i = disks.top + r;
+        if (i >= n) break;
+        const Item& it = disks.items[disks.vis[i]];
+        auto f = split(it.attr, '|');
+        std::string size = humanSize(std::strtoull(f[0].c_str(), nullptr, 10));
+        bool chosen = it.id == diskPick, cursor = i == disks.cur;
+        float y = y0 + r * pitch;
+        rr(72, y, 936, rh, 40, chosen ? pal::primary : pal::card, chosen ? 1.f : 0.95f);
+        if (cursor && !chosen) ring(72, y, 936, rh, 40, 5, pal::primary);
+        uint32_t fg = chosen ? pal::onPrimary : pal::text, fg2 = chosen ? pal::onPrimary : pal::dim;
+        cv->circle(PX(134), PY(y + rh / 2), 24 * u, chosen ? pal::onPrimary : pal::dim);  // radio button
+        cv->circle(PX(134), PY(y + rh / 2), 18 * u, chosen ? pal::primary : pal::card);
+        if (chosen) cv->circle(PX(134), PY(y + rh / 2), 10 * u, pal::onPrimary);
+        txt(190, y + 46, fit(it.label, 42, 560), 42, fg, chosen ? 0.3f : 0);
+        txt(972, y + 46, size, 42, fg, 0, 2);
+        std::string sub = "/dev/" + it.id + (f.size() > 1 && !f[1].empty() ? "  " + f[1] : "") + (f.size() > 2 && f[2] == "1" ? "  removable" : "");
+        txt(190, y + 94, fit(sub, 30, 780), 30, fg2, 0, 0, 0.9f);
+        hit(72, y, 936, rh, HDisk, i);
+    }
+    if (n > disks.rows) {
+        float trackH = disks.rows * pitch - 12, th = std::max(60.f, trackH * disks.rows / n);
+        rr(1024, y0 + (trackH - th) * disks.top / std::max(1, n - disks.rows), 8, th, 4, pal::primary, 0.7f);
+    }
+    if (!err.empty()) txt(80, 1200 + bs * 0, fit(err, 32, 900), 32, pal::error);
+    bottomBar(1, "Next");
+}
+
+void App::drawErase() {
+    topBar(stepText());
+    txt(72, 285, "Erase disk?", 104, pal::text, 0.5f);
+    txt(72, 372, "This cannot be undone", 38, pal::error);
+    const Item* d = pickedDisk();
+    rr(72, 424, 936, 540, 48, pal::errorCard, 0.97f);
+    txt(112, 486, "Everything on this disk will be erased", 38, pal::error, 0.3f);
+    if (d) {
+        auto f = split(d->attr, '|');
+        txt(112, 580, fit(d->label, 56, 860), 56, pal::text, 0.4f);
+        txt(112, 650, humanSize(std::strtoull(f[0].c_str(), nullptr, 10)) + "   /dev/" + d->id, 40, pal::text, 0, 0, 0.9f);
+    }
+    txt(112, 740, "It will get a new GPT table:", 30, pal::dim);
+    txt(112, 786, "1 GiB EFI system partition (FAT32)", 30, pal::text, 0, 0, 0.85f);
+    txt(112, 830, "the rest as one ext4 partition for the system", 30, pal::text, 0, 0, 0.85f);
+    txt(112, 900, "Other disks are not touched", 30, pal::dim);
+    const float y = 1000;
+    rr(72, y, 936, 130, 44, pal::card, 0.95f);
+    if (eraseOn) ring(72, y, 936, 130, 44, 5, pal::error);
+    txt(112, y + 65, "I understand, erase this disk", 40, pal::text);
+    sw(1008 - 36 - 116, y + 33, eraseOn);
+    hit(72, y, 936, 130, HErase);
+    if (!err.empty()) txt(80, 1170, fit(err, 32, 900), 32, pal::error);
+    bottomBar(1, "Erase and install", eraseOn ? pal::error : 0x3A3D4A, eraseOn ? 0x3B0A06 : pal::dim);
 }
 
 void App::drawInfo() {
@@ -833,24 +1084,26 @@ void App::draw(Canvas& c) {
     switch (scr) {
         case Scr::Welcome: drawWelcome(); break;
         case Scr::Locale:
-            topBar("Step 1 of 8"); titleBlock("Language", "System language and formats");
+            topBar(stepText()); titleBlock("Language", "System language and formats");
             drawList(true, 548); bottomBar(1, "Next"); break;
         case Scr::Layout:
-            topBar("Step 2 of 8"); titleBlock("Keyboard", "Layout for the console and Hyprland");
+            topBar(stepText()); titleBlock("Keyboard", "Layout for the console and Hyprland");
             drawList(true, 548); bottomBar(1, "Next"); break;
         case Scr::Timezone:
-            topBar("Step 3 of 8"); titleBlock("Time zone", "Try typing a city, like berlin");
+            topBar(stepText()); titleBlock("Time zone", "Try typing a city, like berlin");
             drawList(true, 548); bottomBar(1, "Next"); break;
         case Scr::Hostname: drawHost(); break;
         case Scr::Account: drawAccount(); break;
         case Scr::Apps:
-            topBar("Step 6 of 8"); titleBlock("Apps", "Space toggles, the basics are always included");
+            topBar(stepText()); titleBlock("Apps", "Space toggles, the basics are always included");
             drawApps(); bottomBar(1, "Next"); break;
         case Scr::Look: drawLook(); break;
         case Scr::Summary: drawSummary(); break;
         case Scr::Install: drawInstall(); break;
         case Scr::Done: drawDone(); break;
         case Scr::Failed: drawFailed(); break;
+        case Scr::Disk: drawDisk(); break;
+        case Scr::Erase: drawErase(); break;
     }
     if (showInfo) drawInfo();
 }
