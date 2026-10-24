@@ -1,0 +1,35 @@
+# Откуда взято каждое решение в nix/iso.nix и flake.nix (этап 1). Поиск шёл через инструмент web_search 2026-10-24;
+# сеть песочницы закрыта, поэтому ВСЕ эти источники НЕ на пиннутой ревизии nixpkgs (02c087f3fe673c9e317f206a627cb6b910336dbe), а на
+# тех ревизиях, что вернул поиск. Окончательная сверка с пином возможна только настоящим `nix eval`/`nix build` (см. PROGRESS.md).
+
+1. Каркас `nixpkgs.lib.nixosSystem { modules = [ ... imports = [ (modulesPath + "/installer/cd-dvd/installation-cd-*.nix") ]; ]; }`
+   и результат в `config.system.build.isoImage`:
+   - https://wiki.nixos.org/wiki/Creating_a_NixOS_live_CD/en  (пример с exampleIso и modulesPath)
+   - https://github.com/NixOS/nixpkgs/issues/21840  (`nix-build -A config.system.build.isoImage`)
+
+2. Почему installation-cd-base.nix, а не installation-cd-minimal.nix:
+   - minimal ставит `fonts.fontconfig.enable = lib.mkForce false;` и `isoImage.edition = lib.mkForce "minimal";`
+     (текст файла в копии https://github.com/LunNova/nixos-configs/blob/dev/nixos-minimal-installer.nix, она переписана с nixpkgs;
+     оригинал nixpkgs в поиск не попал; сам `environment.noXlibs` / fontconfig см. также
+     https://git.uninsane.org/colin/nixpkgs/src/commit/46b6619cb39e7e4d68c61aab724157ba27a8f94d/nixos/modules/config/no-x-libs.nix)
+   - графические ISO импортируют тот же base: `imports = [ ./installation-cd-base.nix ];` в
+     https://github.com/NixOS/nixpkgs/blob/8f366cbfcc62871f481e035984e5932e30d8b0ed/nixos/modules/installer/cd-dvd/installation-cd-graphical-base.nix
+   - состав base (iso-image.nix, profiles/all-hardware.nix, profiles/base.nix, profiles/installation-device.nix, isoImage.makeEfiBootable,
+     isoImage.makeUsbBootable, swapDevices/fileSystems через mkImageMediaOverride): СТАРАЯ версия файла, spectrum-os.org archive:
+     https://spectrum-os.org/git/nixpkgs/tree/nixos/modules/installer/cd-dvd/installation-cd-base.nix?h=archive
+     (содержимое на пиннутой ревизии 2026 года мог измениться: не проверено)
+
+3. NetworkManager и wpa_supplicant:
+   - графические ISO: `networking.networkmanager.enable = true; networking.wireless.enable = mkForce false;` (PR #42610)
+     https://github.com/NixOS/nixpkgs/pull/42610/files ; позже `lib.mkImageMediaOverride false`
+     https://code.ornl.gov/nix/nixpkgs/-/commit/ace5ad92a24db91b3a56242b37ad873bac24d0ab
+   - 25.11: NM включается уже в installation-cd-base.nix, блок убран из graphical-base (коммит «nixos/installer: ship the minimal ISO with networkmanager»)
+     https://code.fizz.buzz/talexander/nixpkgs/commit/75fff53d96b2d2fa26be1dcb76c03b7823c9816f.diff
+   => `networking.networkmanager.enable = true;` + `networking.wireless.enable = lib.mkForce false;` корректны и до, и после этого изменения.
+
+4. `nixpkgs.hostPlatform` в модуле (без аргумента `system`):
+   - в собственном flake.nix nixpkgs: тест `nixosSystemAcceptsLib` с `nixpkgs.hostPlatform = "x86_64-linux";`, `system` задаётся модульно
+     https://github.com/NixOS/nixpkgs/blob/master/flake.nix
+   - https://flake.parts/options/flake-parts.html («system is not needed ... or set nixpkgs.hostPlatform in a module»)
+
+5. Нового flake input НЕ добавлялось (nixos-generators не использован): любой новый input изменил бы flake.lock, что запрещено.

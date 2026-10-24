@@ -1,6 +1,6 @@
 # PROGRESS.md: статус по модулям
 
-Состояние на 2026-10-23. Постоянные сведения о проекте в `CLAUDE.md`; здесь только статус.
+Состояние на 2026-10-24. Постоянные сведения о проекте в `CLAUDE.md`; здесь только статус.
 
 Шкала (важно: слово «готово» здесь **не** означает «работает»):
 - **ГОТОВО**: код написан целиком и проходит доступные статические проверки. Ни один модуль ни разу не запускался в настоящем Hyprland/Quickshell.
@@ -12,7 +12,7 @@
 ### Nix / сборка
 | Модуль | Статус | Заметки |
 |---|---|---|
-| `flake.nix` | ГОТОВО (парсится) | `flake.lock` **отсутствует**: песочница не достаёт до GitHub/git.outfoxxed.me (403). Ревизии nixpkgs/home-manager/quickshell не зафиксированы. |
+| `flake.nix` | ГОТОВО (парсился раньше; добавленный `nixosConfigurations.iso` НЕ парсился, нет nix) | `flake.lock` есть в репозитории (его создал CI, коммит `04770e9`), пины: nixpkgs `02c087f3fe67`, home-manager `6750249c6996`, quickshell `9b0f339b1905`. |
 | `nix/nixos.nix` | ГОТОВО (парсится, не вычислялся) | assert на Hyprland >= 0.55; pipewire, NetworkManager, bluetooth, upower, power-profiles-daemon, polkit + user-сервис hyprpolkitagent, порталы, dconf. |
 | `nix/home.nix` | ГОТОВО (парсится, не вычислялся) | Самый рискованный файл: опции home-manager (`gtk.gtk4.theme = null`, `gtk.gtk4.extraCss`), `xdg.configFile` для целых каталогов, activation `material-theme init`. |
 | `nix/scripts.nix` | ГОТОВО (парсится, не собирался) | `writeShellApplication` оборачивает скрипты и проверяет их shellcheck'ом при сборке; shellcheck локально нет, так что **возможны ошибки сборки** из-за его замечаний. |
@@ -55,8 +55,16 @@
 | `README.md` | НЕ НАЧАТО |
 | Установщик: `installer/src` (UI на C++), `installer/apply.sh`, `installer/bootstrap.sh`, `nix/installer.nix` | ГОТОВО (UI и apply.sh прогнаны без дисплея и без Nix; см. ниже) | Всё сценарий-тестируется офлайн, но на NixOS не запускалось. `main_sdl.cpp` (окно, мышь, ресайз) компилировался только против самописной заглушки SDL2, `nix/installer.nix` и правка `flake.nix` не парсились (нет nix в песочнице). |
 | Применение M3 Expressive (пружины, радиусы 20/32/48, emphasized-веса) | НЕ НАЧАТО (исследование готово: `docs/M3-EXPRESSIVE.md`) |
-| `flake.lock` | НЕ ПОЛУЧИЛОСЬ (сеть) |
+| `flake.lock` | ЕСТЬ в репозитории (создан workflow `flake-lock.yml`, не мной); в песочнице получить не удалось (сеть), см. §2 |
 | Тесты | НЕТ; `tools/` только самодельные проверки |
+
+### ISO (live-образ) — этапы 1-4 (подробности и требования в `CLAUDE.md`, раздел «ISO»)
+| Этап | Статус | Что есть / чего нет |
+|---|---|---|
+| 1. `nixosConfigurations.iso` (`nix/iso.nix`, выход в `flake.nix`) | **ЗАГЛУШКА: код написан, ни разу не вычислялся и не собирался** | Нет доказательств, которые вы требовали: `nix build` не выполнен, образ в QEMU не загружен (в песочнице нет nix, qemu, KVM и сети; `iso-env-probe.txt`). Проверено только: баланс скобок самодельным скриптом (не парсер), `flake.lock` не изменён (хеш и `git diff`), источники решений собраны (`iso-stage1-sources.txt`, **не на пиннутой ревизии nixpkgs**). Риск: assert Hyprland >= 0.55 в `nix/nixos.nix` на пиннутом nixpkgs; конфликты опций `installation-cd-base.nix` с `nixosModules.default` не исключены; точный состав `installation-cd-base.nix` на ревизии 2026 года не сверен. |
+| 2. Автозапуск live-сессии (cage + GUI) | НЕ НАЧАТО | |
+| 3. Установка на диск | НЕ НАЧАТО | |
+| 4. GitHub Actions: Release + освобождение места | НЕ НАЧАТО | Существующий `flake-lock.yml` не трогался. |
 
 ## 2. Что проверено и чем
 
@@ -70,13 +78,17 @@
 | UI установщика в стиле Google Pixel: 12 экранов, клавиатура и мышь, поиск в списках, валидация, дочерний процесс, прогресс, провал + повтор | `installer/pixeldots-installer-headless` (тот же `app.cpp`, что в SDL-сборке) со сценариями `tests/flow.txt`, `tests/mouse.txt`, `tests/fail.txt` и заглушкой `tests/fake-apply.sh`; скриншоты 1920x1080 и 1080x2400 просмотрены глазами и сверены с присланным скриншотом мастера Pixel | OK. Первая версия была пиксель-артом (недоразумение), переделана. Найдено и исправлено: «Fran??ais» (нет Latin-1 в шрифте), пятна слишком огромные в портрете, подпись слишком близко к заголовку, аватар перекрывал имя | `installer-headless.txt` |
 | `apply.sh`: валидация, генерация `flake.nix` + `pixeldots-local.nix`, хеш пароля, `user.lua`, `state.json` | `PD_DRY_RUN=1` с поддельным `/etc/nixos`; в песочнице root, поэтому проверка «не root» отключена в dry-run | OK; пароль в открытом виде нигде не появляется (`grep -c`), `a;b` как hostname и неизвестный id приложения отклоняются | `installer-dry-run.txt` |
 | Синтаксис `installer/*.sh`; `main_sdl.cpp` | `bash -n`; `g++ -fsyntax-only` с самописной заглушкой `SDL2/SDL.h` | OK (для SDL: только имена и типы, не настоящий API) | `installer-checks.txt` |
+| ISO этап 1: баланс скобок/строк в `flake.nix`, `nix/*.nix` | самодельный скрипт (НЕ `nix-instantiate --parse`, nix в песочнице нет) | OK для 6 файлов; это НЕ проверка синтаксиса Nix | `iso-stage1-static.txt` |
+| `flake.lock` не изменён этапом 1 | `sha256sum -c` по хешу, снятому до правок + `git diff --quiet -- flake.lock` | OK | `iso-stage1-static.txt` |
 
 Ранний `qmlcheck.js` нашёл 10 проблем (неразрешённый тип `Anim`, ссылки на `id: panel`, несбалансированные скобки в `Weather.qml`); все исправлены до этой сессии. Исходный вывод в `earlier-session-failures.txt`.
 
 ### Попытки проверки, которые не удались
 | Что хотели | Чем | Почему не вышло | Лог |
 |---|---|---|---|
-| `flake.lock` | `nix flake lock` | api.github.com → 403 («GitHub access … not enabled for this session»); git.outfoxxed.me → CONNECT 403 | `nix-flake-lock.txt`, `net-probe.txt` |
+| `flake.lock` (в песочнице; позже его создал CI) | `nix flake lock` | api.github.com → 403 («GitHub access … not enabled for this session»); git.outfoxxed.me → CONNECT 403 | `nix-flake-lock.txt`, `net-probe.txt` |
+| ISO этап 1: `nix build .#nixosConfigurations.iso.config.system.build.isoImage` и загрузка в QEMU | не запускалось | В песочнице нет nix, qemu-system-x86_64, xorriso, mksquashfs, `/dev/kvm`; 1 CPU, 4 ГБ RAM, ~10 ГБ диска; DNS не резолвится (curl exit 6), pip и apt тоже. Сборка ISO здесь невозможна в принципе. | `iso-env-probe.txt` |
+| ISO этап 1: `nix-instantiate --parse` новых файлов | не запускалось | nix не установлен (в более ранней песочнице был 2.34.6) | `iso-env-probe.txt` |
 | `nix build` / `nix flake check` | не запускались (без lock и сети бессмысленно) | | |
 | Настоящий Lua (lupa) | `pip install lupa` | PyPI недоступен; через прокси 403 | `pip-lupa.txt`, `earlier-session-failures.txt` |
 | `qmllint` | PySide6 (`pip install PySide6-Essentials`) | PyPI недоступен | `pip-pyside6.txt`, `missing-tools.txt` |
@@ -86,6 +98,7 @@
 | Fengari (Lua на JS) / npm | `npm install fengari` | registry.npmjs.org недоступен | `earlier-session-failures.txt` |
 
 ### Написано БЕЗ проверки (ни разу не запускалось)
+- ISO этап 1 целиком: `nix/iso.nix` + `nixosConfigurations.iso` (вычисление, сборка, загрузка). Ожидаемые риски перечислены в таблице ISO выше.
 - Google Sans Flex как шрифт установщика: `tools/gen-font-sdf.py` умеет оси вариативных шрифтов (проверено на Lora-Variable), но самого файла Flex не было, в атласе по-прежнему Outfit.
 - Установщик на живой системе: `nix build .#pixeldots-installer-session` (SDL2 из nixpkgs, `cage`), SDL2 на Wayland под `cage` (окно, текстовый ввод, масштаб), `nixos-rebuild switch` на сгенерированном flake, `sudo -n` после `sudo -v`, `exec Hyprland` через login-shell. Сгенерированные `.nix` только прочитаны глазами: `services.xserver.xkb.*`, `pixeldots.inputs.nixpkgs` и `.inputs.home-manager` из подключаемого flake, дедупликация `hardware-configuration.nix` при двойном импорте, `hashedPassword` при `mutableUsers`, `hl.config` из `user.lua` поверх `input.lua`.
 - Вычисление и сборка любого Nix-кода; опции home-manager (`gtk.gtk4.theme = null` и др.); результат `writeShellApplication` + shellcheck.
@@ -98,12 +111,13 @@
 
 ## 3. Что делать дальше (порядок)
 
-1. На машине с сетью: `nix flake lock` → `nix flake check` → `nix build .#material-theme .#material-screenshot`; исправить ошибки опций. Закоммитить `flake.lock`.
+1. На машине с сетью (flake.lock уже есть, не пересоздавать): `nix flake check` → `nix build .#material-theme .#material-screenshot`; исправить ошибки опций. 
 2. Поставить Hyprland >= 0.55 и Quickshell; `hyprctl configerrors`; исправить Lua; сверить `fullscreen` и `hyprctl dispatch/eval`.
 3. `qs -c material log`, починить QML по месту (начать с `Drawers`, `PanelRegion`, `bar`); локскрин проверять последним и осторожно.
 4. Прогнать `matugen` на `aurora.png`, убедиться, что все 7 выходов создаются.
 5. Внедрить M3 Expressive по `docs/M3-EXPRESSIVE.md` §4.
 6. Написать `README.md`.
+0. ISO этап 1: на машине с nix выполнить две команды из `CLAUDE.md` («ISO»), приложить вывод; либо запушить в main и посмотреть `nix flake check --no-build` в workflow `flake-lock` (это даст вычисление, но не сборку и не QEMU). Только после этого этап 2.
 7. Установщик: запустить `bash installer/bootstrap.sh --dry-run`, затем без флагов в ВМ с NixOS (`--software`), не на основной системе; починить по логу `~/.local/state/pixeldots-installer/install.log`.
 
 ## 4. Приложение: сырые выводы (целиком, без сокращений)
@@ -366,5 +380,127 @@ modules/bar/ActiveWindow.qml: unresolved type Anim
 services/Weather.qml: unbalanced brackets (1)
 
 10 problem(s)
+
+````
+
+### docs/logs/iso-env-probe.txt
+
+````text
+$ date -u
+Sat Oct 24 05:24:32 UTC 2026
+
+$ command -v for the tools stage 1 needs
+nix: NOT FOUND
+nix-build: NOT FOUND
+nix-instantiate: NOT FOUND
+nix-store: NOT FOUND
+qemu-system-x86_64: NOT FOUND
+qemu-img: NOT FOUND
+xorriso: NOT FOUND
+mksquashfs: NOT FOUND
+genisoimage: NOT FOUND
+grub-mkrescue: NOT FOUND
+docker: NOT FOUND
+podman: NOT FOUND
+
+$ ls -l /dev/kvm
+ls: cannot access '/dev/kvm': No such file or directory
+
+$ nproc; free -m; df -h /
+1
+               total        used        free      shared  buff/cache   available
+Mem:            3995         186        3901          14          54        3808
+/dev/vda        252G  8.7G  9.9G  47% /
+
+$ network probes (curl -m 10)
+https://cache.nixos.org/nix-cache-info -> 000
+curl exit 6
+https://github.com -> 000
+curl exit 6
+https://raw.githubusercontent.com/NixOS/nixpkgs/master/README.md -> 000
+curl exit 6
+https://channels.nixos.org -> 000
+curl exit 6
+https://pypi.org/simple/pip/ -> 000
+curl exit 6
+http://archive.ubuntu.com/ubuntu/ -> 000
+curl exit 6
+
+$ pip download probe
+ERROR: Could not find a version that satisfies the requirement tree-sitter-nix (from versions: none)
+ERROR: No matching distribution found for tree-sitter-nix
+
+$ apt probe
+W: Download is performed unsandboxed as root as file '/home/claude/p/pixeldots/qemu-system-x86_1%3a8.2.2+ds-0ubuntu1.16_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+E: Failed to fetch http://security.ubuntu.com/ubuntu/pool/main/q/qemu/qemu-system-x86_8.2.2%2bds-0ubuntu1.16_amd64.deb  Could not resolve 'archive.ubuntu.com'
+
+````
+
+### docs/logs/iso-stage1-static.txt
+
+````text
+$ python3 /tmp/nixbalance.py flake.nix nix/*.nix   (crude delimiter check, NOT nix-instantiate --parse: nix is not installed in this sandbox)
+balanced  flake.nix
+balanced  nix/home.nix
+balanced  nix/installer.nix
+balanced  nix/iso.nix
+balanced  nix/nixos.nix
+balanced  nix/scripts.nix
+[exit=0]
+
+$ sha256sum -c flake.lock hash recorded before any edit (d5139479...)
+flake.lock: OK
+
+$ git diff --stat -- flake.lock  (empty = unchanged vs HEAD)
+flake.lock: no diff vs HEAD
+
+$ git log --oneline -- flake.lock
+04770e9 flake.lock: update
+
+$ pinned inputs in flake.lock
+nixpkgs: rev 02c087f3fe673c9e317f206a627cb6b910336dbe
+home-manager: rev 6750249c69969d09d952efaf3fab88a2bdac7ec6
+quickshell: rev 9b0f339b19057f4731bf3b48293307d7ef241671
+
+````
+
+### docs/logs/iso-stage1-sources.txt
+
+````text
+# Откуда взято каждое решение в nix/iso.nix и flake.nix (этап 1). Поиск шёл через инструмент web_search 2026-10-24;
+# сеть песочницы закрыта, поэтому ВСЕ эти источники НЕ на пиннутой ревизии nixpkgs (02c087f3fe673c9e317f206a627cb6b910336dbe), а на
+# тех ревизиях, что вернул поиск. Окончательная сверка с пином возможна только настоящим `nix eval`/`nix build` (см. PROGRESS.md).
+
+1. Каркас `nixpkgs.lib.nixosSystem { modules = [ ... imports = [ (modulesPath + "/installer/cd-dvd/installation-cd-*.nix") ]; ]; }`
+   и результат в `config.system.build.isoImage`:
+   - https://wiki.nixos.org/wiki/Creating_a_NixOS_live_CD/en  (пример с exampleIso и modulesPath)
+   - https://github.com/NixOS/nixpkgs/issues/21840  (`nix-build -A config.system.build.isoImage`)
+
+2. Почему installation-cd-base.nix, а не installation-cd-minimal.nix:
+   - minimal ставит `fonts.fontconfig.enable = lib.mkForce false;` и `isoImage.edition = lib.mkForce "minimal";`
+     (текст файла в копии https://github.com/LunNova/nixos-configs/blob/dev/nixos-minimal-installer.nix, она переписана с nixpkgs;
+     оригинал nixpkgs в поиск не попал; сам `environment.noXlibs` / fontconfig см. также
+     https://git.uninsane.org/colin/nixpkgs/src/commit/46b6619cb39e7e4d68c61aab724157ba27a8f94d/nixos/modules/config/no-x-libs.nix)
+   - графические ISO импортируют тот же base: `imports = [ ./installation-cd-base.nix ];` в
+     https://github.com/NixOS/nixpkgs/blob/8f366cbfcc62871f481e035984e5932e30d8b0ed/nixos/modules/installer/cd-dvd/installation-cd-graphical-base.nix
+   - состав base (iso-image.nix, profiles/all-hardware.nix, profiles/base.nix, profiles/installation-device.nix, isoImage.makeEfiBootable,
+     isoImage.makeUsbBootable, swapDevices/fileSystems через mkImageMediaOverride): СТАРАЯ версия файла, spectrum-os.org archive:
+     https://spectrum-os.org/git/nixpkgs/tree/nixos/modules/installer/cd-dvd/installation-cd-base.nix?h=archive
+     (содержимое на пиннутой ревизии 2026 года мог измениться: не проверено)
+
+3. NetworkManager и wpa_supplicant:
+   - графические ISO: `networking.networkmanager.enable = true; networking.wireless.enable = mkForce false;` (PR #42610)
+     https://github.com/NixOS/nixpkgs/pull/42610/files ; позже `lib.mkImageMediaOverride false`
+     https://code.ornl.gov/nix/nixpkgs/-/commit/ace5ad92a24db91b3a56242b37ad873bac24d0ab
+   - 25.11: NM включается уже в installation-cd-base.nix, блок убран из graphical-base (коммит «nixos/installer: ship the minimal ISO with networkmanager»)
+     https://code.fizz.buzz/talexander/nixpkgs/commit/75fff53d96b2d2fa26be1dcb76c03b7823c9816f.diff
+   => `networking.networkmanager.enable = true;` + `networking.wireless.enable = lib.mkForce false;` корректны и до, и после этого изменения.
+
+4. `nixpkgs.hostPlatform` в модуле (без аргумента `system`):
+   - в собственном flake.nix nixpkgs: тест `nixosSystemAcceptsLib` с `nixpkgs.hostPlatform = "x86_64-linux";`, `system` задаётся модульно
+     https://github.com/NixOS/nixpkgs/blob/master/flake.nix
+   - https://flake.parts/options/flake-parts.html («system is not needed ... or set nixpkgs.hostPlatform in a module»)
+
+5. Нового flake input НЕ добавлялось (nixos-generators не использован): любой новый input изменил бы flake.lock, что запрещено.
 
 ````

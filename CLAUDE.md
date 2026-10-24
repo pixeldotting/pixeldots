@@ -6,7 +6,7 @@
 ## Репозиторий и имена
 
 - GitHub: **github.com/pixeldotting/pixeldots** (`git remote add origin git@github.com:pixeldotting/pixeldots.git`). Каталог чекаута называть `pixeldots` (архивы собираются с `pixeldots/` внутри).
-- Flake-вход: `github:pixeldotting/pixeldots`. Выходов `nixosConfigurations` нет, только модули (`nixosModules.default`, `homeManagerModules.default`) и пакеты, так что имя каталога на сборку не влияет.
+- Flake-вход: `github:pixeldotting/pixeldots`. Выходы: модули (`nixosModules.default`, `homeManagerModules.default`), пакеты и `nixosConfigurations.iso` (live-ISO, см. «ISO»); имя каталога на сборку не влияет.
 - Имена `programs.material`, `qs -c material`, namespace `material-*` остаются как есть: это имя шелла, не репозитория.
 - В логах `docs/logs/` и `PROGRESS.md` встречается старый путь `material-dots`: это сырой вывод, не править.
 
@@ -28,7 +28,7 @@ for f in flake.nix nix/*.nix; do nix-instantiate --parse "$f" >/dev/null; done  
 ```
 Сборка и применение (на машине с сетью; **ни разу не выполнялось**, см. НЕ ГОТОВО):
 ```sh
-nix flake lock                       # создаёт flake.lock (его пока нет)
+# flake.lock уже в репозитории (создан workflow flake-lock.yml, коммит 04770e9): НЕ пересоздавать и не менять ревизии без явной просьбы
 nix flake check                      # вычисление flake
 nix build .#material-theme .#material-screenshot
 sudo nixos-rebuild switch --flake .#<host>     # или home-manager switch --flake .#<user>
@@ -67,8 +67,8 @@ material-screenshot region|full|window
 ## Версии (что зафиксировано, что нет)
 
 - **Hyprland**: нужен >= 0.55 (проверка assert в `nix/nixos.nix` по `programs.hyprland.package.version`). Точная версия не пинится.
-- **Quickshell**: `git+https://git.outfoxxed.me/quickshell/quickshell`, **ревизия не зафиксирована**: `flake.lock` отсутствует. Шелл использует новые API (Bluetooth, Pam, UPower, IdleMonitor), так что нужен свежий master.
-- **nixpkgs**: канал `nixos-unstable`. **home-manager**: master, `follows` nixpkgs. matugen из nixpkgs, версия неизвестна; шаблоны написаны под v3.
+- **Quickshell**: `git+https://git.outfoxxed.me/quickshell/quickshell`, ревизия зафиксирована в `flake.lock` (9b0f339b1905). Шелл использует новые API (Bluetooth, Pam, UPower, IdleMonitor), так что нужен свежий master.
+- **nixpkgs**: канал `nixos-unstable`. **home-manager**: master, `follows` nixpkgs. matugen из nixpkgs, версия неизвестна; пины в `flake.lock`: nixpkgs 02c087f3fe67, home-manager 6750249c6996; шаблоны написаны под v3.
 - Исполненное окружение разработки (песочница): Nix 2.34.6, texlua, node 22, git 2.43; **нет** qmllint, lua/lupa, shellcheck, Hyprland, Quickshell.
 
 ## Структура репозитория
@@ -88,6 +88,7 @@ config/quickshell/material/  весь шелл, 64 QML-файла
 installer/                 bootstrap.sh, apply.sh, src/*.cpp (SDL2 UI), data/ (locales, layouts, timezones, apps.tsv, font.sdf), tests/
 tools/gen-font-sdf.py      печёт installer/data/font.sdf из TTF
 nix/installer.nix          пакеты pixeldots-installer (UI) и pixeldots-installer-session (cage + UI)
+nix/iso.nix                модуль live-ISO (`nixosConfigurations.iso`), этап 1
 wallpapers/aurora.png      стартовые обои (сгенерированы кодом)
 tools/                     harness.lua, qmlcheck.js (самодельные проверки)
 docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
@@ -112,7 +113,7 @@ docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
 
 ## НЕ ГОТОВО (порядок работ; детали в PROGRESS.md)
 
-1. `flake.lock` нет, `nix flake check`/`nix build`/`nixos-rebuild` ни разу не запускались, `home.nix` и `nixos.nix` только распарсены. Сделать первым: `nix flake lock`, затем вычислить и поправить ошибки опций (особенно `gtk.gtk4.theme = null`).
+1. `flake.lock` есть (его ведёт CI), но `nix flake check`/`nix build`/`nixos-rebuild` в песочнице ни разу не запускались (там нет nix и сети), `home.nix` и `nixos.nix` только распарсены. Сделать первым на машине с сетью: `nix flake check`, поправить ошибки опций (особенно `gtk.gtk4.theme = null`). Первую настоящую проверку вычисления даёт CI: `.github/workflows/flake-lock.yml` на push в main с изменённым `flake.nix` гоняет `nix flake check --no-build`.
 2. Живой Hyprland >= 0.55 ни разу не запускался: `hyprctl configerrors`, значения `hl.dsp.window.fullscreen`, семантика `hyprctl dispatch/eval` для Lua.
 3. Quickshell ни разу не запускался, QML не загружался (только самодельная статика). Прогнать `qs -c material log`, починить непроверенные API (`QsMenuAnchor anchor.item`, `Hyprland.activeToplevel.lastIpcObject`, `DesktopEntry.execute` для Terminal-приложений, Pam/Bluetooth/UPower).
 4. Шаблоны matugen (v3-синтаксис, имена переменных, флаги `-m`/`-t`) не рендерились.
@@ -159,6 +160,34 @@ docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
   прочитаны глазами; под вопросом `services.xserver.xkb.*`, `pixeldots.inputs.nixpkgs`/`.home-manager` из внешнего flake, дедупликация
   `hardware-configuration.nix`, `users.users.<n>.hashedPassword` при `mutableUsers`), `hl.config` в `user.lua` (слияние с `input.lua`),
   запуск Hyprland после выхода из `cage`.
+
+## ISO (загрузочный образ, делается по этапам)
+
+Цель: загрузочный ISO NixOS, который ставит систему целиком (не только доты); собирает GitHub Actions. Четыре этапа строго по одному, после
+каждого коммит + обновлённый PROGRESS.md + сырой вывод проверок; следующий этап не начинать без отчёта по текущему:
+1. `nixosConfigurations.iso` (ядро, железо, NetworkManager, рабочий стол из `nixosModules.default`), без установщика. **Код написан, не подтверждён.**
+2. Автозапуск live-сессии: cage + GUI вместо логина. Не начато.
+3. Установка на диск (выбор диска, GPT+ESP, `nixos-install --flake`, генерация конфига). Не начато.
+4. GitHub Actions: сборка ISO, публикация в Release (не upload-artifact), отдельный шаг освобождения места. Не начато.
+
+Жёсткие требования владельца (действуют на всех этапах): пароль только как `hashedPassword`, никогда открытым текстом в `.nix` и в логе на экране;
+hostname и имя пользователя валидируются ДО подстановки в Nix; разметка только выбранного из списка диска и только после экрана
+подтверждения с моделью и размером, никаких дефолтов «sda»; опции и API не выдумывать, а сверять с документацией и указывать источник
+(`docs/logs/iso-stage1-sources.txt`); не называть готовым непроверенное; `flake.lock` не пересоздавать и ревизии не менять, поэтому новых
+flake inputs (в т.ч. nixos-generators) не добавлять.
+
+Решения этапа 1, которые легко «исправить» по ошибке:
+- `nix/iso.nix` импортирует `installer/cd-dvd/installation-cd-base.nix`, а НЕ `installation-cd-minimal.nix`: минимальный профиль ставит
+  `fonts.fontconfig.enable = lib.mkForce false` и `isoImage.edition = lib.mkForce "minimal"`, что ломает Qt/Hyprland-десктоп.
+- `nixpkgs.hostPlatform` задан в модуле (у `lib.nixosSystem` нет аргумента `system`). Пока только x86_64-linux.
+- Имя ISO-файла и параметры сжатия не трогаются (имена опций `isoImage.*`/`image.*` в пиннутом nixpkgs не сверены); имя для релиза даст workflow.
+- Тестовой серийной консоли в образе нет (`console=ttyS0` не добавлен): решить на этапе 2, когда понадобится лог загрузки из QEMU.
+
+Проверка этапа 1 (на машине с nix и сетью; в песочнице НЕЛЬЗЯ, там нет nix/qemu/KVM/сети, см. `docs/logs/iso-env-probe.txt`):
+```sh
+nix build .#nixosConfigurations.iso.config.system.build.isoImage -L && ls -lh result/iso/*.iso
+qemu-system-x86_64 -enable-kvm -m 4096 -smp 2 -cdrom result/iso/*.iso -boot d   # команда из вики NixOS (там -m 256 для minimal; для десктопа нужно больше)
+```
 
 ## Правила для следующего агента
 

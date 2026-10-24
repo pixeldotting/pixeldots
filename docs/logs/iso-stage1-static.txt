@@ -1,0 +1,22 @@
+$ python3 /tmp/nixbalance.py flake.nix nix/*.nix   (crude delimiter check, NOT nix-instantiate --parse: nix is not installed in this sandbox)
+balanced  flake.nix
+balanced  nix/home.nix
+balanced  nix/installer.nix
+balanced  nix/iso.nix
+balanced  nix/nixos.nix
+balanced  nix/scripts.nix
+[exit=0]
+
+$ sha256sum -c flake.lock hash recorded before any edit (d5139479...)
+flake.lock: OK
+
+$ git diff --stat -- flake.lock  (empty = unchanged vs HEAD)
+flake.lock: no diff vs HEAD
+
+$ git log --oneline -- flake.lock
+04770e9 flake.lock: update
+
+$ pinned inputs in flake.lock
+nixpkgs: rev 02c087f3fe673c9e317f206a627cb6b910336dbe
+home-manager: rev 6750249c69969d09d952efaf3fab88a2bdac7ec6
+quickshell: rev 9b0f339b19057f4731bf3b48293307d7ef241671

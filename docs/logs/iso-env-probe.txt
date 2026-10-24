@@ -1,0 +1,47 @@
+$ date -u
+Sat Oct 24 05:24:32 UTC 2026
+
+$ command -v for the tools stage 1 needs
+nix: NOT FOUND
+nix-build: NOT FOUND
+nix-instantiate: NOT FOUND
+nix-store: NOT FOUND
+qemu-system-x86_64: NOT FOUND
+qemu-img: NOT FOUND
+xorriso: NOT FOUND
+mksquashfs: NOT FOUND
+genisoimage: NOT FOUND
+grub-mkrescue: NOT FOUND
+docker: NOT FOUND
+podman: NOT FOUND
+
+$ ls -l /dev/kvm
+ls: cannot access '/dev/kvm': No such file or directory
+
+$ nproc; free -m; df -h /
+1
+               total        used        free      shared  buff/cache   available
+Mem:            3995         186        3901          14          54        3808
+/dev/vda        252G  8.7G  9.9G  47% /
+
+$ network probes (curl -m 10)
+https://cache.nixos.org/nix-cache-info -> 000
+curl exit 6
+https://github.com -> 000
+curl exit 6
+https://raw.githubusercontent.com/NixOS/nixpkgs/master/README.md -> 000
+curl exit 6
+https://channels.nixos.org -> 000
+curl exit 6
+https://pypi.org/simple/pip/ -> 000
+curl exit 6
+http://archive.ubuntu.com/ubuntu/ -> 000
+curl exit 6
+
+$ pip download probe
+ERROR: Could not find a version that satisfies the requirement tree-sitter-nix (from versions: none)
+ERROR: No matching distribution found for tree-sitter-nix
+
+$ apt probe
+W: Download is performed unsandboxed as root as file '/home/claude/p/pixeldots/qemu-system-x86_1%3a8.2.2+ds-0ubuntu1.16_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+E: Failed to fetch http://security.ubuntu.com/ubuntu/pool/main/q/qemu/qemu-system-x86_8.2.2%2bds-0ubuntu1.16_amd64.deb  Could not resolve 'archive.ubuntu.com'

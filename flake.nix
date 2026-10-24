@@ -32,6 +32,15 @@
       # User side: shell, Hyprland Lua config, matugen templates, kitty, fish, GTK/Qt, cursor.
       homeManagerModules.default = import ./nix/home.nix inputs;
 
+      # Live ISO (stage 1: base system + desktop, no installer inside yet).
+      #   nix build .#nixosConfigurations.iso.config.system.build.isoImage
+      nixosConfigurations.iso = nixpkgs.lib.nixosSystem {
+        modules = [
+          ./nix/iso.nix
+          self.nixosModules.default
+        ];
+      };
+
       packages = forAllSystems (
         pkgs: import ./nix/scripts.nix { inherit pkgs; } // import ./nix/installer.nix { inherit pkgs; }
       );
