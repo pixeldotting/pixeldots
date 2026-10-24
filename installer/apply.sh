@@ -1,0 +1,270 @@
+#!/usr/bin/env bash
+# apply.sh: the part of the installer that actually changes the system. Started by the C++ UI.
+#
+# Input (set by the UI):  PD_LOCALE PD_LAYOUT PD_TZ PD_HOSTNAME PD_USER PD_APPS PD_MODE PD_VARIANT PD_AUTOSTART
+#                         first line of stdin = new password (empty = keep the current one)
+# Optional:               PD_FLAKE_URL   pixeldots flake URL (default github:pixeldotting/pixeldots)
+#                         PD_NIXOS_DIR   where configuration.nix lives (default /etc/nixos)
+#                         PD_OUT_DIR     where the generated flake goes (default /etc/nixos/pixeldots)
+#                         PD_REPO        checkout used for repoPath (default: the checkout this script is in)
+#                         PD_DRY_RUN=1   generate files into PD_OUT_DIR, do not use sudo, do not rebuild
+# Output: lines "@@ <percent> <message>" drive the progress bar, everything else is shown as log.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE="${PD_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/pixeldots-installer}"
+mkdir -p "$STATE"
+LOG="${PD_LOG:-$STATE/install.log}"
+exec > >(tee -a "$LOG") 2>&1
+
+progress() { echo "@@ $1 $2"; }
+die() { echo "error: $*" >&2; exit 1; }
+
+# The password is read first, kept only in this shell's memory and never echoed.
+IFS= read -r PW || PW=""
+
+progress 3 "Checking answers"
+re() { [[ $2 =~ $1 ]] || die "invalid $3: '$2'"; }
+: "${PD_LOCALE:?}" "${PD_LAYOUT:?}" "${PD_TZ:?}" "${PD_HOSTNAME:?}" "${PD_USER:?}"
+: "${PD_MODE:?}" "${PD_VARIANT:?}"
+PD_APPS="${PD_APPS:-}"
+PD_AUTOSTART="${PD_AUTOSTART:-1}"
+re '^[A-Za-z]{2,3}_[A-Za-z]{2}\.UTF-8$' "$PD_LOCALE" locale
+re '^[a-z]{2,3}(,[a-z]{2,3})*$' "$PD_LAYOUT" "keyboard layout"
+re '^[A-Za-z0-9_+/-]+$' "$PD_TZ" "time zone"
+re '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' "$PD_HOSTNAME" hostname
+re '^[a-z_][a-z0-9_-]{0,31}$' "$PD_USER" "user name"
+re '^(dark|light)$' "$PD_MODE" mode
+re '^scheme-[a-z-]+$' "$PD_VARIANT" "palette style"
+re '^[01]$' "$PD_AUTOSTART" autostart
+
+[ "$(id -u)" -ne 0 ] || [ "${PD_DRY_RUN:-0}" = 1 ] || die "run the installer as your normal user, not as root"
+[ "$(id -un)" = "$PD_USER" ] || die "installer runs as '$(id -un)' but configures '$PD_USER'"
+
+DRY="${PD_DRY_RUN:-0}"
+NIXOS_DIR="${PD_NIXOS_DIR:-/etc/nixos}"
+OUT="${PD_OUT_DIR:-/etc/nixos/pixeldots}"
+REPO="${PD_REPO:-$(cd "$HERE/.." && pwd)}"
+FLAKE_URL="${PD_FLAKE_URL:-github:pixeldotting/pixeldots}"
+case "$REPO" in /nix/store/*) die "run the installer from a git checkout, not from the Nix store ($REPO)" ;; esac
+[ -d "$REPO/config/hypr" ] || die "not a pixeldots checkout: $REPO"
+
+SUDO=""
+if [ "$DRY" != 1 ]; then
+    SUDO="sudo"
+    sudo -n true 2> /dev/null || die "sudo needs a password: start bootstrap.sh from a terminal (it asks once)"
+fi
+
+progress 8 "Reading the existing NixOS configuration"
+[ -f "$NIXOS_DIR/hardware-configuration.nix" ] || die "$NIXOS_DIR/hardware-configuration.nix not found (run nixos-generate-config)"
+[ -f "$NIXOS_DIR/configuration.nix" ] || die "$NIXOS_DIR/configuration.nix not found"
+SYSTEM="$(uname -m)-linux"
+case "$SYSTEM" in x86_64-linux | aarch64-linux) ;; *) die "unsupported architecture: $SYSTEM" ;; esac
+
+progress 12 "Resolving apps"
+APPS_NIX=""
+UNFREE=0
+IFS=',' read -ra ids <<< "$PD_APPS"
+for id in "${ids[@]}"; do
+    [ -n "$id" ] || continue
+    re '^[a-z0-9_-]+$' "$id" "app id"
+    row="$(grep -E "^${id}\|" "$HERE/data/apps.tsv" || true)"
+    [ -n "$row" ] || die "unknown app '$id'"
+    IFS='|' read -r _ _ attr unfree _ <<< "$row"
+    re '^[A-Za-z0-9_-]+$' "$attr" "nixpkgs attribute"
+    APPS_NIX+="$attr "
+    [ "$unfree" = 1 ] && UNFREE=1
+done
+
+HASH=""
+if [ -n "$PW" ]; then
+    progress 15 "Hashing the password"
+    if command -v mkpasswd > /dev/null; then
+        HASH="$(printf '%s' "$PW" | mkpasswd -m sha-512 -s)"
+    elif command -v openssl > /dev/null; then
+        HASH="$(printf '%s\n' "$PW" | openssl passwd -6 -stdin)"
+    else
+        die "neither mkpasswd nor openssl found to hash the password"
+    fi
+    [[ $HASH == \$6\$* ]] || die "password hashing failed"
+fi
+PW=""
+
+progress 20 "Generating the flake"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+XKBOPTS=""
+[[ $PD_LAYOUT == *,* ]] && XKBOPTS="grp:alt_shift_toggle"
+
+UNFREE_NIX=""
+[ "$UNFREE" = 1 ] && UNFREE_NIX='  nixpkgs.config.allowUnfree = true;'
+PASSWORD_NIX=""
+[ -n "$HASH" ] && PASSWORD_NIX="    hashedPassword = lib.mkForce \"$HASH\";"
+AUTOSTART_NIX=""
+if [ "$PD_AUTOSTART" = 1 ]; then
+    AUTOSTART_NIX='  programs.fish.loginShellInit = '"''"'
+    if test -z "$WAYLAND_DISPLAY"; and test "$XDG_VTNR" = 1
+      exec Hyprland
+    end
+  '"''"';'
+fi
+
+# configuration.nix from nixos-generate-config imports hardware-configuration.nix itself.
+MODULES="          ./configuration.nix"
+grep -q 'hardware-configuration' "$NIXOS_DIR/configuration.nix" || MODULES="          ./hardware-configuration.nix
+$MODULES"
+
+cat > "$TMP/flake.nix" << 'NIX'
+# Generated by the pixeldots installer.
+{
+  description = "pixeldots system (generated by the pixeldots installer)";
+
+  inputs.pixeldots.url = "@URL@";
+
+  outputs =
+    { self, pixeldots, ... }:
+    let
+      nixpkgs = pixeldots.inputs.nixpkgs;
+    in
+    {
+      nixosConfigurations."@HOST@" = nixpkgs.lib.nixosSystem {
+        specialArgs = { inherit pixeldots; };
+        modules = [
+@MODULES@
+          pixeldots.nixosModules.default
+          pixeldots.inputs.home-manager.nixosModules.home-manager
+          ./pixeldots-local.nix
+        ];
+      };
+    };
+}
+NIX
+
+cat > "$TMP/pixeldots-local.nix" << 'NIX'
+# Generated by the pixeldots installer (answers from the setup screens).
+# You can edit it; running the installer again overwrites it.
+{
+  config,
+  lib,
+  pkgs,
+  pixeldots,
+  ...
+}:
+{
+  nixpkgs.hostPlatform = lib.mkDefault "@SYSTEM@";
+@UNFREE@
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
+
+  networking.hostName = lib.mkForce "@HOST@";
+  time.timeZone = lib.mkForce "@TZ@";
+  i18n.defaultLocale = lib.mkForce "@LOCALE@";
+  services.xserver.xkb.layout = lib.mkForce "@LAYOUT@";
+  services.xserver.xkb.options = lib.mkForce "@XKBOPTS@";
+
+  users.users."@USER@" = {
+    isNormalUser = lib.mkDefault true;
+    home = lib.mkDefault "/home/@USER@";
+    extraGroups = [
+      "wheel"
+      "networkmanager"
+      "video"
+      "audio"
+      "input"
+    ];
+    shell = lib.mkForce pkgs.fish;
+@PASSWORD@
+  };
+  programs.fish.enable = true;
+@AUTOSTART@
+
+  environment.systemPackages = with pkgs; [ @APPS@];
+
+  home-manager = {
+    useGlobalPkgs = true;
+    useUserPackages = true;
+    backupFileExtension = "pixeldots-bak";
+    users."@USER@" = {
+      imports = [ pixeldots.homeManagerModules.default ];
+      programs.material = {
+        enable = true;
+        repoPath = "@REPO@";
+      };
+      home.stateVersion = config.system.stateVersion;
+    };
+  };
+}
+NIX
+
+subst() {  # subst <file>: replace @NAME@ placeholders (values were validated above)
+    local f="$1" t
+    t="$(< "$f")"
+    t="${t//@URL@/$FLAKE_URL}"
+    t="${t//@HOST@/$PD_HOSTNAME}"
+    t="${t//@MODULES@/$MODULES}"
+    t="${t//@SYSTEM@/$SYSTEM}"
+    t="${t//@UNFREE@/$UNFREE_NIX}"
+    t="${t//@TZ@/$PD_TZ}"
+    t="${t//@LOCALE@/$PD_LOCALE}"
+    t="${t//@LAYOUT@/$PD_LAYOUT}"
+    t="${t//@XKBOPTS@/$XKBOPTS}"
+    t="${t//@USER@/$PD_USER}"
+    t="${t//@PASSWORD@/$PASSWORD_NIX}"
+    t="${t//@AUTOSTART@/$AUTOSTART_NIX}"
+    t="${t//@APPS@/$APPS_NIX}"
+    t="${t//@REPO@/$REPO}"
+    printf '%s\n' "$t" > "$f"
+}
+subst "$TMP/flake.nix"
+subst "$TMP/pixeldots-local.nix"
+HASH=""
+
+progress 28 "Writing the user settings"
+# Keyboard layout for Hyprland: user.lua is the documented place for personal overrides.
+{
+    echo "-- Written by the pixeldots installer. Edit freely."
+    echo "hl.config({ input = { kb_layout = \"$PD_LAYOUT\", kb_options = \"$XKBOPTS\" } })"
+} > "$REPO/config/hypr/user.lua"
+
+# Theme state read by material-theme and the shell.
+THEME_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/material"
+mkdir -p "$THEME_DIR"
+if [ -s "$THEME_DIR/state.json" ] && command -v jq > /dev/null; then
+    jq --arg m "$PD_MODE" --arg v "$PD_VARIANT" '.mode = $m | .variant = $v' "$THEME_DIR/state.json" > "$TMP/state.json"
+    cat "$TMP/state.json" > "$THEME_DIR/state.json"
+else
+    printf '{"wallpaper":"","mode":"%s","variant":"%s"}\n' "$PD_MODE" "$PD_VARIANT" > "$THEME_DIR/state.json"
+fi
+
+progress 32 "Installing the flake into $OUT"
+$SUDO mkdir -p "$OUT"
+$SUDO cp "$NIXOS_DIR/configuration.nix" "$NIXOS_DIR/hardware-configuration.nix" "$OUT/"
+$SUDO cp "$TMP/flake.nix" "$TMP/pixeldots-local.nix" "$OUT/"
+echo "files in $OUT:"
+ls -1 "$OUT"
+
+if [ "$DRY" = 1 ]; then
+    progress 100 "Dry run finished (no rebuild)"
+    exit 0
+fi
+
+progress 38 "Building and switching (the slow part)"
+lines=0
+pct=38
+if ! $SUDO env NIX_CONFIG='experimental-features = nix-command flakes' \
+    nixos-rebuild switch --flake "path:$OUT#$PD_HOSTNAME" 2>&1 \
+    | while IFS= read -r line; do
+        echo "$line"
+        lines=$((lines + 1))
+        if [ $((lines % 12)) -eq 0 ] && [ "$pct" -lt 92 ]; then
+            pct=$((pct + 1))
+            echo "@@ $pct Building and switching (the slow part)"
+        fi
+    done; then
+    die "nixos-rebuild failed, see $LOG"
+fi
+
+progress 100 "Done"

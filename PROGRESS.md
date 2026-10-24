@@ -53,8 +53,8 @@
 | Стартовые обои `wallpapers/aurora.png` | ГОТОВО (сгенерированы кодом, ~3 МБ) |
 | Курсор, GTK, Qt (qt6ct), kitty, fish, starship | ГОТОВО в Nix-модуле, не запускались |
 | `README.md` | НЕ НАЧАТО |
+| Установщик: `installer/src` (UI на C++), `installer/apply.sh`, `installer/bootstrap.sh`, `nix/installer.nix` | ГОТОВО (UI и apply.sh прогнаны без дисплея и без Nix; см. ниже) | Всё сценарий-тестируется офлайн, но на NixOS не запускалось. `main_sdl.cpp` (окно, мышь, ресайз) компилировался только против самописной заглушки SDL2, `nix/installer.nix` и правка `flake.nix` не парсились (нет nix в песочнице). |
 | Применение M3 Expressive (пружины, радиусы 20/32/48, emphasized-веса) | НЕ НАЧАТО (исследование готово: `docs/M3-EXPRESSIVE.md`) |
-| Установщик (bash-бутстраппер + C++ под `cage`) | НЕ НАЧАТО (замысел в `CLAUDE.md`) |
 | `flake.lock` | НЕ ПОЛУЧИЛОСЬ (сеть) |
 | Тесты | НЕТ; `tools/` только самодельные проверки |
 
@@ -67,6 +67,9 @@
 | QML: типы/импорты/ссылки на id/скобки | `node tools/qmlcheck.js`: **самодельная** статика, не qmllint | OK, 64 файла | `qmlcheck.txt` |
 | Синтаксис shell-скриптов | `bash -n` | OK, 2 файла | `bash-n-scripts.txt` |
 | Синтаксис Nix | `nix-instantiate --parse`, 4 файла | OK (только парсинг, не вычисление) | `nix-parse.txt` |
+| UI установщика в стиле Google Pixel: 12 экранов, клавиатура и мышь, поиск в списках, валидация, дочерний процесс, прогресс, провал + повтор | `installer/pixeldots-installer-headless` (тот же `app.cpp`, что в SDL-сборке) со сценариями `tests/flow.txt`, `tests/mouse.txt`, `tests/fail.txt` и заглушкой `tests/fake-apply.sh`; скриншоты 1920x1080 и 1080x2400 просмотрены глазами и сверены с присланным скриншотом мастера Pixel | OK. Первая версия была пиксель-артом (недоразумение), переделана. Найдено и исправлено: «Fran??ais» (нет Latin-1 в шрифте), пятна слишком огромные в портрете, подпись слишком близко к заголовку, аватар перекрывал имя | `installer-headless.txt` |
+| `apply.sh`: валидация, генерация `flake.nix` + `pixeldots-local.nix`, хеш пароля, `user.lua`, `state.json` | `PD_DRY_RUN=1` с поддельным `/etc/nixos`; в песочнице root, поэтому проверка «не root» отключена в dry-run | OK; пароль в открытом виде нигде не появляется (`grep -c`), `a;b` как hostname и неизвестный id приложения отклоняются | `installer-dry-run.txt` |
+| Синтаксис `installer/*.sh`; `main_sdl.cpp` | `bash -n`; `g++ -fsyntax-only` с самописной заглушкой `SDL2/SDL.h` | OK (для SDL: только имена и типы, не настоящий API) | `installer-checks.txt` |
 
 Ранний `qmlcheck.js` нашёл 10 проблем (неразрешённый тип `Anim`, ссылки на `id: panel`, несбалансированные скобки в `Weather.qml`); все исправлены до этой сессии. Исходный вывод в `earlier-session-failures.txt`.
 
@@ -83,6 +86,8 @@
 | Fengari (Lua на JS) / npm | `npm install fengari` | registry.npmjs.org недоступен | `earlier-session-failures.txt` |
 
 ### Написано БЕЗ проверки (ни разу не запускалось)
+- Google Sans Flex как шрифт установщика: `tools/gen-font-sdf.py` умеет оси вариативных шрифтов (проверено на Lora-Variable), но самого файла Flex не было, в атласе по-прежнему Outfit.
+- Установщик на живой системе: `nix build .#pixeldots-installer-session` (SDL2 из nixpkgs, `cage`), SDL2 на Wayland под `cage` (окно, текстовый ввод, масштаб), `nixos-rebuild switch` на сгенерированном flake, `sudo -n` после `sudo -v`, `exec Hyprland` через login-shell. Сгенерированные `.nix` только прочитаны глазами: `services.xserver.xkb.*`, `pixeldots.inputs.nixpkgs` и `.inputs.home-manager` из подключаемого flake, дедупликация `hardware-configuration.nix` при двойном импорте, `hashedPassword` при `mutableUsers`, `hl.config` из `user.lua` поверх `input.lua`.
 - Вычисление и сборка любого Nix-кода; опции home-manager (`gtk.gtk4.theme = null` и др.); результат `writeShellApplication` + shellcheck.
 - Любой QML на загрузку и в рантайме. Особо сомнительные API: `QsMenuAnchor` (`anchor.item`), `Hyprland.activeToplevel.lastIpcObject`, `DesktopEntry.execute` для Terminal-приложений, `PamContext`/`WlSessionLock`, `Quickshell.Bluetooth`, `Mpris`, `UPower`, `NotificationServer`, `IdleMonitor`.
 - Семантика `hyprctl dispatch '<lua>'` и `hyprctl eval` (используются в `services/Hypr.qml`), `hyprctl reload` для выхода из game mode.
@@ -99,7 +104,7 @@
 4. Прогнать `matugen` на `aurora.png`, убедиться, что все 7 выходов создаются.
 5. Внедрить M3 Expressive по `docs/M3-EXPRESSIVE.md` §4.
 6. Написать `README.md`.
-7. Установщик (замысел в `CLAUDE.md`).
+7. Установщик: запустить `bash installer/bootstrap.sh --dry-run`, затем без флагов в ВМ с NixOS (`--software`), не на основной системе; починить по логу `~/.local/state/pixeldots-installer/install.log`.
 
 ## 4. Приложение: сырые выводы (целиком, без сокращений)
 

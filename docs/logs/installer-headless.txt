@@ -1,0 +1,23 @@
+$ make clean && make headless   (g++ -std=c++17 -Wall -Wextra, no warnings expected)
+g++ -O2 -std=c++17 -Wall -Wextra -Isrc src/app.cpp src/main_headless.cpp -o pixeldots-installer-headless
+[make exit=0]
+
+$ tests/flow.txt (keyboard, 1920x1080)
+quit=1 exit=0 screen=done
+[exit=0]
+
+$ tests/fail.txt (FAKE_FAIL=1: Install -> Failed -> Retry -> Failed -> Esc)
+quit=1 exit=1 screen=failed
+[exit=0]
+
+$ tests/mouse.txt (clicks + wheel)
+quit=1 exit=0 screen=done
+[exit=0]
+
+$ frame cost (benchmarks: worst case = background recomputed every frame / UI only)
+draw 1920x1080: 27.0 ms/frame
+draw 1280x800: 15.7 ms/frame
+draw 1080x2400: 38.4 ms/frame
+ui-only 1920x1080: 6.6 ms/frame
+ui-only 1920x1080: 11.5 ms/frame
+ui-only 1920x1080: 11.8 ms/frame

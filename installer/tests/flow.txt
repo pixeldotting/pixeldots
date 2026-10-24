@@ -1,0 +1,48 @@
+expect:welcome
+shot:/tmp/s01_welcome.ppm
+enter
+expect:locale
+type:ru
+shot:/tmp/s02_locale.ppm
+enter
+expect:layout
+down
+shot:/tmp/s03_layout.ppm
+enter
+expect:timezone
+type:berlin
+shot:/tmp/s04_tz.ppm
+enter
+expect:hostname
+bksp bksp bksp bksp bksp bksp bksp bksp bksp
+type:my-box
+shot:/tmp/s05_host.ppm
+enter
+expect:account
+type:secret1
+tab
+type:secret2
+enter
+shot:/tmp/s06_account_err.ppm
+bksp
+type:1
+enter
+expect:apps
+down down type:_
+down down down type:_
+shot:/tmp/s07_apps.ppm
+enter
+expect:look
+right down right right down right
+shot:/tmp/s08_look.ppm
+enter
+expect:summary
+shot:/tmp/s09_summary.ppm
+enter
+expect:install
+wait:0.5
+shot:/tmp/s10_install.ppm
+wait:1.5
+expect:done
+shot:/tmp/s11_done.ppm
+enter

@@ -15,7 +15,7 @@
 Material You dotfiles для **NixOS** в духе Caelestia: Hyprland с конфигом на **Lua** (формат 0.55+) и собственный
 шелл на **Quickshell** (QML). Цвета из обоев генерирует **matugen**. Бар, лаунчер, уведомления (попапы и центр),
 центр управления, дашборд, локскрин и меню сессии, OSD, сайдбар, выбор обоев. Дополнительно: kitty, fish, starship,
-GTK/Qt, курсор. Установщик: см. «TODO: УСТАНОВЩИК» (пока не начат).
+GTK/Qt, курсор. Установщик: `installer/` (см. «УСТАНОВЩИК»), написан и проверен без дисплея, на живой системе не запускался.
 
 ## Команды
 
@@ -45,6 +45,12 @@ pixeldots.homeManagerModules.default
 # и:
 programs.material.enable = true;
 programs.material.repoPath = "/home/<user>/pixeldots";            # необязательно: симлинки вне стора, правки без пересборки
+```
+Установщик (`installer/`):
+```sh
+make -C installer headless && cd installer && PD_APPLY=$PWD/tests/fake-apply.sh PD_SIZE=1920x1080 ./pixeldots-installer-headless data tests/flow.txt   # весь UI-сценарий без дисплея (+ tests/mouse.txt, tests/fail.txt с FAKE_FAIL=1); `shot:файл.ppm` в сценарии = скриншот
+PD_DRY_RUN=1 PD_OUT_DIR=/tmp/out PD_NIXOS_DIR=<каталог с configuration.nix> ... bash installer/apply.sh <<< 'пароль'   # только сгенерировать flake
+bash installer/bootstrap.sh [--local] [--software] [--dry-run]   # на настоящей NixOS из TTY: сборка, cage, установка, Hyprland
 ```
 Запуск и отладка на живой системе:
 ```sh
@@ -79,6 +85,9 @@ config/quickshell/material/  весь шелл, 64 QML-файла
   components/              переиспользуемые виджеты (StyledText, StateLayer, Tile, M3Slider ...)
   services/                синглтоны: Audio, Brightness, Network, Notifs, Hypr, Media, Power, Wallpapers, Weather, ...
   modules/                 Drawers + PanelRegion, bar/, dashboard/, launcher/, notifications/, sidebar/, osd/, session/, wallpaper/, controlcenter/, lock/, Idle, Ipc
+installer/                 bootstrap.sh, apply.sh, src/*.cpp (SDL2 UI), data/ (locales, layouts, timezones, apps.tsv, font.sdf), tests/
+tools/gen-font-sdf.py      печёт installer/data/font.sdf из TTF
+nix/installer.nix          пакеты pixeldots-installer (UI) и pixeldots-installer-session (cage + UI)
 wallpapers/aurora.png      стартовые обои (сгенерированы кодом)
 tools/                     harness.lua, qmlcheck.js (самодельные проверки)
 docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
@@ -109,15 +118,47 @@ docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
 4. Шаблоны matugen (v3-синтаксис, имена переменных, флаги `-m`/`-t`) не рендерились.
 5. M3 Expressive не внедрён (пружины, новые радиусы, emphasized-веса): порядок в `docs/M3-EXPRESSIVE.md` §4.
 6. `README.md` не написан.
-7. Установщик не начат.
+7. Установщик (`installer/`) ни разу не запускался на живой NixOS: `nix build .#pixeldots-installer-session`, SDL2 под `cage`, `nixos-rebuild switch` из `apply.sh`, запуск Hyprland после выхода. См. раздел «УСТАНОВЩИК».
 
-## TODO: УСТАНОВЩИК (замысел на будущее, не реализовано)
+## УСТАНОВЩИК (`installer/`)
 
-- **Бутстраппер на `.sh`**: скачивает wayland и зависимости установщика, компилирует его, запускает.
-- **Установщик на C++**: на время работы сам становится композитором, запускается под `cage`.
-- **Первый экран**: первичный сетап в пиксельном стиле; спрашивает часовой пояс и остальное.
-- После ответов ставит приложения и зависимости.
-- По завершении выходит из `cage` в готовый Hyprland + Quickshell.
+Замысел: бутстраппер на `.sh` собирает установщик, C++-установщик работает под `cage`, спрашивает настройки в стиле мастера
+настройки Google Pixel (Material You: органические пятна на фоне, крупные скруглённые «таблетки», крупный текст; НЕ пиксель-арт, это
+было недоразумение), ставит систему и выходит в готовый Hyprland + Quickshell. Реализация:
+
+- `installer/bootstrap.sh`: проверки (не root, NixOS, sudo), берёт чекаут (свой или клонирует в `~/pixeldots`), `sudo -v` с keepalive,
+  `nix build <checkout>#pixeldots-installer-session` (SDL2, cage, wayland тянутся Nix'ом, C++ компилируется там же), запускает
+  `cage -s -- pixeldots-installer`, по коду 0 делает `exec Hyprland` через login-shell (`env -u __NIXOS_SET_ENVIRONMENT_DONE bash -l`).
+  Флаги: `--local` (flake системы берёт этот чекаут, а не github), `--software` (pixman, для ВМ), `--dry-run`.
+- `installer/src/`: `app.cpp/hpp` (экраны, ввод, раскладка в «design units» 1080x1500, масштабируется под окно; нижние элементы
+  прижаты к низу в высоких окнах), `gfx.hpp` (свой софтверный рендер: SDF-скруглённые формы с анти-алиасингом, капсулы для иконок,
+  текст из SDF-атласа, фон из двух слоёв органических пятен = smooth-min кругов, поле считается на сетке 1/8 и кэшируется на 40 мс),
+  `main_sdl.cpp` (SDL2: окно любого размера, клавиатура, мышь, колесо), `main_headless.cpp` (скриптовый прогон, дамп PPM, `PD_SIZE=WxH`).
+  Шрифт: `installer/data/font.sdf`, SDF-атлас Outfit (OFL, лицензия рядом) для U+0020..007E и U+00A0..00FF; пересборка:
+  `python3 tools/gen-font-sdf.py <Outfit-Regular.ttf> installer/data/font.sdf` (нужны Pillow, numpy, scipy). Вариативные шрифты: оси
+  аргументами (`wght=400 ROND=0`); проверено на Lora-Variable. Планировался Google Sans Flex (OFL, как у настоящего Pixel), но файла в
+  песочнице нет и сети нет: пока в атласе Outfit. Чтобы заменить: скачать TTF с fonts.google.com, запечь командой выше, положить его
+  OFL.txt в `installer/data/` вместо `Outfit-OFL.txt`, пересмотреть скриншоты (метрики: центр заглавных = 0.35 em в `Font::drawMid`). Кириллицы в шрифте нет,
+  поэтому UI только на английском, подписи языков латиницей. Вес «жирнее» делается сдвигом порога SDF, отдельного Bold нет.
+  Палитра взята пипеткой со скриншота мастера Pixel (`pal::` в `gfx.hpp`). Экраны:
+  Welcome, язык, раскладка, часовой пояс (поиск), имя компьютера, пароль (необязательный; пользователь = текущий), приложения
+  (`data/apps.tsv`), вид (dark/light, палитра matugen, автозапуск Hyprland на tty1), сводка, установка (прогресс из строк
+  `@@ <проц> <текст>`), готово / ошибка (повтор). Клавиатура и мышь; кнопка `i` показывает подсказку по клавишам.
+- `installer/apply.sh`: настоящая работа. Ответы приходят в `PD_*` (env), пароль одной строкой через stdin (в argv/env/файлы не попадает,
+  в Nix уходит только sha-512 хеш). Проверяет ответы regex'ами, копирует `configuration.nix` и `hardware-configuration.nix` из
+  `/etc/nixos` в `/etc/nixos/pixeldots/`, генерирует там `flake.nix` и `pixeldots-local.nix` (hostname, tz, locale, xkb, пароль,
+  fish как шелл, приложения, home-manager с `programs.material.repoPath` = чекаут), пишет `config/hypr/user.lua` (раскладка) в
+  чекаут и `~/.local/state/material/state.json`, затем `nixos-rebuild switch --flake path:/etc/nixos/pixeldots#<host>`.
+  Существующие файлы в `/etc/nixos` не трогает. Полный лог: `~/.local/state/pixeldots-installer/install.log`.
+- Решения, которые легко «исправить» по ошибке: установщик настраивает **только текущего пользователя** (имя из `$USER`; нового не создаёт:
+  у чужого `$HOME` не было бы чекаута для `repoPath`); раскладка в установщике всегда `us` (`XKB_DEFAULT_LAYOUT=us`), потому что
+  пароль набирается до применения настроек; `apply.sh` запускается из чекаута, не из стора (отказывается работать из `/nix/store`).
+- Не проверено (нет Nix/SDL2/Wayland/NixOS в песочнице): сборка `nix/installer.nix` (даже не парсился), `main_sdl.cpp` против настоящего SDL2
+  (только синтаксис по самописной заглушке; не видел окно, мышь, ресайз и частоту кадров в реальности; в headless-замерах кадр 7-12 мс UI +
+  ~18 мс пересчёт фона на 1080p), `cage` и ввод/вывод SDL на Wayland, `nixos-rebuild` и сгенерированные `.nix` (только
+  прочитаны глазами; под вопросом `services.xserver.xkb.*`, `pixeldots.inputs.nixpkgs`/`.home-manager` из внешнего flake, дедупликация
+  `hardware-configuration.nix`, `users.users.<n>.hashedPassword` при `mutableUsers`), `hl.config` в `user.lua` (слияние с `input.lua`),
+  запуск Hyprland после выхода из `cage`.
 
 ## Правила для следующего агента
 

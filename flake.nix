@@ -32,7 +32,9 @@
       # User side: shell, Hyprland Lua config, matugen templates, kitty, fish, GTK/Qt, cursor.
       homeManagerModules.default = import ./nix/home.nix inputs;
 
-      packages = forAllSystems (pkgs: import ./nix/scripts.nix { inherit pkgs; });
+      packages = forAllSystems (
+        pkgs: import ./nix/scripts.nix { inherit pkgs; } // import ./nix/installer.nix { inherit pkgs; }
+      );
 
       formatter = forAllSystems (pkgs: pkgs.nixfmt-rfc-style);
     };

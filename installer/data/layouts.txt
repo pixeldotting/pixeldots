@@ -1,0 +1,15 @@
+us|English (US)
+us,ru|English + Russian (Alt+Shift)
+gb|English (UK)
+ru|Russian
+ua|Ukrainian
+de|German
+fr|French
+es|Spanish
+it|Italian
+pl|Polish
+br|Portuguese (Brazil)
+tr|Turkish
+cz|Czech
+se|Swedish
+jp|Japanese
