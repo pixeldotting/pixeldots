@@ -1,0 +1,34 @@
+$ bash tools/test-iso-release-prep.sh   (runs the "Prepare release files" step on sparse fake ISOs; needs PyYAML)
+ok   - small ISO: ok, one ISO + SHA256SUMS, tag exported
+ok   - small ISO: notes do not mention splitting
+ok   - big ISO: ok, tag generated
+ok   - big ISO: split, no unsplit ISO left, every file under 2 GiB
+ok   - big ISO: joined parts have the checksum SHA256SUMS lists for the whole ISO
+ok   - big ISO: notes explain how to join
+ok   - bad tag refused: a b
+ok   - bad tag refused: x;rm
+ok   - bad tag refused: ../x
+ok   - bad tag refused: aaaaaaaaaaaaaaaaaaaa
+ok   - no ISO built: refused
+
+passed: 11  failed: 0
+[exit=0]
+
+$ yaml load + triggers + bash -n of every run: block
+triggers: ['workflow_dispatch']
+Free disk space bash -n ok
+Build the ISO bash -n ok
+Prepare release files bash -n ok
+Publish release bash -n ok
+
+$ python3 /tmp/nixbalance.py flake.nix nix/*.nix   (crude delimiter check, NOT a Nix parser)
+balanced  flake.nix
+balanced  nix/home.nix
+balanced  nix/installer.nix
+balanced  nix/iso.nix
+balanced  nix/nixos.nix
+balanced  nix/scripts.nix
+
+$ sha256sum -c flake.lock (hash taken before the ISO work started)
+flake.lock: OK
+flake.lock identical to 04770e9

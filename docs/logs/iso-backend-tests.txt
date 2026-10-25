@@ -101,4 +101,3 @@ ok installer/tests/fake-apply-iso.sh
 ok installer/tests/fake-apply.sh
 ok installer/tests/fake-disks.sh
 
-=== a dry-run result: generated pixeldots-local.nix (hash masked by sed for this log) ===

@@ -1,0 +1,40 @@
+# Откуда взято каждое решение для live-сессии, установки и релиза (поиск: инструмент web_search, 2026-10-24/25).
+# Сеть песочницы закрыта, источники НЕ на пиннутой ревизии nixpkgs (02c087f3fe67): это те ревизии, что вернул поиск.
+# Окончательная сверка с пином возможна только настоящим `nix flake check` / `nix build` (см. PROGRESS.md).
+
+1. services.cage (автозапуск сессии вместо логина)
+   - опции services.cage.{enable,user,program,extraArguments,environment}: nixos/modules/services/wayland/cage.nix
+     https://github.com/NixOS/nixpkgs/blob/release-20.09/nixos/modules/services/wayland/cage.nix  (старая версия модуля)
+     https://mynixos.com/nixpkgs/option/services.cage.environment                                   (опция есть в актуальном nixpkgs)
+   - юнит называется cage-tty1, конфликтует с getty@tty1, PAM-сервис cage, wantedBy graphical.target (тот же файл).
+   - ОТКРЫТО: Restart-политика юнита и точный текст модуля на пине не сверены; сессия-обёртка написана так, чтобы не зависеть от неё.
+
+2. Живой пользователь nixos, sudo без пароля, автологин
+   - PR #66338 «installer/no-root»: пользователь nixos, `security.sudo.wheelNeedsPassword = false` в profiles/installation-device.nix
+     https://gitea.suzanne.soy/suzanne.soy/nixpkgs/commit/dd49cf711e3139fec2eca26f31c2ffd8b5c5873b
+   - получается, что `sudo -n` из сессии cage работает без пароля. Не проверено на живом образе.
+
+3. Установка по руководству NixOS (UEFI)
+   - порядок: parted mklabel gpt → mkpart ESP fat32 → set N esp on → mkfs.fat -F 32 -n boot → mkfs.ext4 -L nixos → mount (boot с umask=077)
+     → nixos-generate-config --root /mnt → nixos-install. boot.loader.systemd-boot.enable = true; boot.loader.efi.canTouchEfiVariables = true.
+     https://github.com/NixOS/nixpkgs/blob/8cfce968b1a3a01d74421496a643caac6f3911ad/nixos/doc/manual/installation/installing.xml
+     https://git.pub.solar/b12f/nixpkgs/commit/7fb52b1325a383b7bd83aa2552f6d9d57106d241
+   - отличие от руководства: ESP 1 GiB вместо 512 MiB (больше запас под ядра), корень вторым разделом.
+   - nixos-install --root DIR --flake URI#NAME --no-root-passwd (флаги --flake, --no-root-passwd):
+     https://www.mankier.com/8/nixos-install
+     https://github.com/NixOS/nixpkgs/blob/bb8b5735d6f7e06b9ddd27de115b0600c1ffbdb4/nixos/modules/installer/tools/nixos-install.sh
+   - раскладка: services.xserver.xkb.{layout,options}, console.useXkbConfig
+     https://wiki.nixos.org/wiki/Keyboard_Layout_Customization
+     https://git.uninsane.org/colin/nixpkgs/src/commit/60e731d1ceb7343b1d137afe6b09f3f6409d701b/nixos/modules/config/console.nix
+   - Home Manager: lib.hm.dag.entryBefore, home.activation, xdg.configFile (используются уже в nix/home.nix проекта, на пине вычисляются).
+   - Не из документации, а из своего кода: `inputs.<имя>.follows = "pixeldots/<имя>"` (документированный механизм flake follows);
+     имена входов nixpkgs/home-manager взяты из flake.nix проекта.
+
+4. GitHub Releases
+   - лимит: каждый файл релиза меньше 2 GiB, до 1000 файлов
+     https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases
+     https://fast.io/resources/github-release-file-size-limit/
+   - `gh release create <tag> <files> --target --title --notes-file --prerelease`
+     https://cli.github.com/manual/gh_release_create
+   - cachix/install-nix-action@v31 и actions/checkout@v4: те же версии, что в существующем .github/workflows/flake-lock.yml.
+   - Список каталогов для освобождения места (/usr/share/dotnet, /usr/local/lib/android, /opt/ghc, ...) общеизвестный, НЕ сверен с образом раннера.
