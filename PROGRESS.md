@@ -59,12 +59,27 @@
 | Тесты | НЕТ; `tools/` только самодельные проверки |
 
 ### ISO (live-образ) — этапы 1-4 (подробности и требования в `CLAUDE.md`, раздел «ISO»)
-| Этап | Статус | Что есть / чего нет |
-|---|---|---|
-| 1. `nixosConfigurations.iso` (`nix/iso.nix`, выход в `flake.nix`) | **ВЫЧИСЛЕНИЕ ПОДТВЕРЖДЕНО владельцем** (`nix flake check --no-build`, лог `iso-stage1-flake-check-owner.txt`: `nixosConfigurations.iso` и пакеты установщика вычислились, `all checks passed`). **Сборка ISO и загрузка в QEMU: НЕ подтверждены** | Нет доказательств, которые вы требовали: `nix build` не выполнен, образ в QEMU не загружен (в песочнице нет nix, qemu, KVM и сети; `iso-env-probe.txt`). Проверено только: баланс скобок самодельным скриптом (не парсер), `flake.lock` не изменён (хеш и `git diff`), источники решений собраны (`iso-stage1-sources.txt`, **не на пиннутой ревизии nixpkgs**). Риск: assert Hyprland >= 0.55 в `nix/nixos.nix` на пиннутом nixpkgs; конфликты опций `installation-cd-base.nix` с `nixosModules.default` не исключены; точный состав `installation-cd-base.nix` на ревизии 2026 года не сверен. |
-| 2. Автозапуск live-сессии (cage + GUI) | НЕ НАЧАТО | |
-| 3. Установка на диск | НЕ НАЧАТО | |
-| 4. GitHub Actions: Release + освобождение места | НЕ НАЧАТО | Существующий `flake-lock.yml` не трогался. |
+Правило из задачи: «готово» только то, что проверено. Здесь НИ ОДИН этап не ГОТОВ: в песочнице нет nix, qemu, KVM, GitHub и сети.
+| Этап | Статус | Что проверено и чем | Чего нет |
+|---|---|---|---|
+| 1. `nixosConfigurations.iso` (база + рабочий стол, `nix/iso.nix`) | **ВЫЧИСЛЕНИЕ ПОДТВЕРЖДЕНО владельцем только для ПЕРВОЙ версии** (без cage и без пакетов live-сессии) | `nix flake check --no-build` у владельца: `all checks passed` (`iso-stage1-flake-check-owner.txt`) | Версия с cage и новыми пакетами (коммит `a0b2770`) **не вычислялась ни разу**. `nix build` образа и загрузка в QEMU не выполнены. |
+| 2. Автозапуск live-сессии (`services.cage`, `pixeldots-live-session`) | **ЗАГЛУШКА: код написан, не вычислен, не загружен** | Баланс скобок (не парсер). Опции `services.cage.*` сверены с документацией (`iso-live-sources.txt`), но не на пине. UI в ISO-режиме прогнан без дисплея. | Вычисление, сборка, лог загрузки из QEMU, работа SDL2 под cage, `sudo -n` из сессии cage, Restart-политика юнита `cage-tty1`. |
+| 3. Установка на диск (`installer/disks.sh`, `installer/install-iso.sh`, экраны Disk/Erase в UI) | **ЗАГЛУШКА: логика проверена на поддельных утилитах** | 58 + 12 утверждений с поддельными `parted`/`mkfs`/`mount`/`nixos-install`/`lsblk`; 5 мутантов пойманы; UI-сценарии (`iso-ui-tests.txt`, `iso-backend-tests.txt`) | Ни одного реального диска, `parted`, `mkfs`, `nixos-install`, `nixos-generate-config`. Сгенерированный `flake.nix`/`pixeldots-local.nix` никогда не вычислялся (только прочитан глазами и проверен баланс скобок). Установка в QEMU на виртуальный диск и загрузка с него не выполнены. |
+| 4. GitHub Actions (`.github/workflows/iso.yml`) | **ЗАГЛУШКА: ни разу не запускался на GitHub** | YAML парсится, единственный триггер `workflow_dispatch`, `bash -n` всех шагов, шаг подготовки релиза прогнан локально на фальшивых ISO 100 МБ и 2,2 ГБ (`tools/test-iso-release-prep.sh`, `iso-workflow-and-nix-static.txt`) | Реальный запуск: сборка ISO на раннере, достаточность места, `gh release create`, размер настоящего ISO относительно лимита 2 GiB. |
+
+Жёсткие требования из задачи и чем они проверены (без nix; реальная проверка вывода nixos-install не делалась):
+- **Пароль только как `hashedPassword`, не в `.nix` и не на экране:** `install-iso.sh` хеширует до генерации файлов и обнуляет открытый пароль; тест ищет пароль во всех сгенерированных файлах, логе и записи вызовов (не найден); фильтр `$6$…` в скрипте и в UI; тест утечки падает на сборке БЕЗ фильтра (мутант). Оговорка: хеш лежит в `/nix/store` системы, это штатное поведение NixOS для `hashedPassword`.
+- **Ввод проверяется ДО подстановки в Nix и ДО любых команд:** 23 негативных теста + контроль, что корректный запрос принимается; мутант «стирание до проверки» ловится.
+- **Диск только из списка, после подтверждения:** по умолчанию не выбран ни один диск (UI: Space/клик), отдельный экран Erase с моделью, размером и устройством, переключатель всегда выключен и сбрасывается при возврате; бэкенд заново сверяет диск (имя, модель, размер) со списком `disks.sh` и требует `PD_ERASE_CONFIRM = PD_DISK`.
+- **Не выдуманные опции:** источники в `iso-live-sources.txt`; НЕ на пинe nixpkgs.
+
+Известные практические риски (не исправлены, решать владельцу):
+- **Quickshell собирается из git при установке.** `nix/home.nix` берёт `inputs.quickshell.packages.<system>.default`, бинарный кэш в проекте не настроен, значит `nixos-install` на машине пользователя может часами компилировать Qt-проект. Варианты: Cachix из CI, либо пакет из nixpkgs.
+- **Лимит релиза 2 GiB:** ISO с Hyprland и PipeWire может его превысить; workflow тогда режет на части (проверено только на фальшивых файлах).
+- **Нужна сеть и ~4 ГБ RAM при установке** (входные flake скачиваются в живой /nix/store, который в RAM). Wi-Fi в мастере нет: для него `Ctrl+Alt+F2`, `nmtui`, назад `Ctrl+Alt+F1`.
+- **Только UEFI.** BIOS-режим мастер отклоняет.
+- **У установленной системы нет редактируемого чекаута** (`programs.material.repoPath` не задан, конфиг из стора).
+- `flake-lock.yml` по cron (понедельник) делает `nix flake update` и коммитит лок: пины, под которые сверялся ISO, сдвинутся сами. Не менялся без решения владельца.
 
 ## 2. Что проверено и чем
 
@@ -80,6 +95,11 @@
 | Синтаксис `installer/*.sh`; `main_sdl.cpp` | `bash -n`; `g++ -fsyntax-only` с самописной заглушкой `SDL2/SDL.h` | OK (для SDL: только имена и типы, не настоящий API) | `installer-checks.txt` |
 | ISO этап 1: баланс скобок/строк в `flake.nix`, `nix/*.nix` | самодельный скрипт (НЕ `nix-instantiate --parse`, nix в песочнице нет) | OK для 6 файлов; это НЕ проверка синтаксиса Nix | `iso-stage1-static.txt` |
 | `flake.lock` не изменён этапом 1 | `sha256sum -c` по хешу, снятому до правок + `git diff --quiet -- flake.lock` | OK | `iso-stage1-static.txt` |
+| ISO: UI в ISO-режиме (диск, пользователь, стирание, хеш в логе) + регрессия обычного визарда | `installer/pixeldots-installer-headless`, сценарии `tests/iso-*.txt`, `tests/flow|mouse|fail.txt`, контроли (мутант без фильтра падает) | OK; скриншоты 1920x1080 просмотрены | `iso-ui-tests.txt` |
+| ISO: `disks.sh` | `tests/disks-test.sh` с поддельными `lsblk`/`findmnt` | 12/12; недоступный для проверки диск не предлагается (fail closed) | `iso-backend-tests.txt` |
+| ISO: `install-iso.sh` | `tests/backend-test.sh` с поддельными утилитами, 5 мутантов | 58/58; мутанты пойманы 4/4 по смыслу + 1 после усиления теста | `iso-backend-tests.txt` |
+| ISO: релизный шаг workflow | `tools/test-iso-release-prep.sh` (PyYAML, разреженные файлы), контроль «лишний триггер push → тест падает» | 11/11 | `iso-workflow-and-nix-static.txt` |
+| ISO: баланс скобок в `flake.nix`, `nix/*.nix` и в сгенерированных файлах | самодельный скрипт (НЕ парсер Nix) | OK | `iso-workflow-and-nix-static.txt` |
 
 Ранний `qmlcheck.js` нашёл 10 проблем (неразрешённый тип `Anim`, ссылки на `id: panel`, несбалансированные скобки в `Weather.qml`); все исправлены до этой сессии. Исходный вывод в `earlier-session-failures.txt`.
 
@@ -98,7 +118,7 @@
 | Fengari (Lua на JS) / npm | `npm install fengari` | registry.npmjs.org недоступен | `earlier-session-failures.txt` |
 
 ### Написано БЕЗ проверки (ни разу не запускалось)
-- ISO этап 1 целиком: `nix/iso.nix` + `nixosConfigurations.iso` (вычисление, сборка, загрузка). Ожидаемые риски перечислены в таблице ISO выше.
+- ISO целиком, кроме вычисления первой версии у владельца: версия с cage и пакетами live-сессии не вычислялась; сборка образа, загрузка в QEMU, разметка и `nixos-install` на настоящем диске, сгенерированные `flake.nix` и `pixeldots-local.nix` (опции `services.xserver.xkb.*`, `hashedPassword`, `home.activation.pixeldotsLook`, `xdg.configFile."hypr/user.lua"`, `follows`), запуск `.github/workflows/iso.yml`. Подробно в таблице ISO.
 - Google Sans Flex как шрифт установщика: `tools/gen-font-sdf.py` умеет оси вариативных шрифтов (проверено на Lora-Variable), но самого файла Flex не было, в атласе по-прежнему Outfit.
 - Установщик на живой системе: `nix build .#pixeldots-installer-session` (SDL2 из nixpkgs, `cage`), SDL2 на Wayland под `cage` (окно, текстовый ввод, масштаб), `nixos-rebuild switch` на сгенерированном flake, `sudo -n` после `sudo -v`, `exec Hyprland` через login-shell. Сгенерированные `.nix` только прочитаны глазами: `services.xserver.xkb.*`, `pixeldots.inputs.nixpkgs` и `.inputs.home-manager` из подключаемого flake, дедупликация `hardware-configuration.nix` при двойном импорте, `hashedPassword` при `mutableUsers`, `hl.config` из `user.lua` поверх `input.lua`.
 - Вычисление и сборка любого Nix-кода; опции home-manager (`gtk.gtk4.theme = null` и др.); результат `writeShellApplication` + shellcheck.
@@ -117,7 +137,7 @@
 4. Прогнать `matugen` на `aurora.png`, убедиться, что все 7 выходов создаются.
 5. Внедрить M3 Expressive по `docs/M3-EXPRESSIVE.md` §4.
 6. Написать `README.md`.
-0. ISO этап 1: на машине с nix выполнить две команды из `CLAUDE.md` («ISO»), приложить вывод; либо запушить в main и посмотреть `nix flake check --no-build` в workflow `flake-lock` (это даст вычисление, но не сборку и не QEMU). Только после этого этап 2.
+0. ISO: (а) `nix flake check --no-build` на текущем коммите (вычислит cage-сессию и новые пакеты) и приложить вывод; (б) `nix build .#nixosConfigurations.iso.config.system.build.isoImage` и загрузка в QEMU с UEFI (OVMF) и виртуальным диском >= 30 ГБ: прогнать мастер до конца, перезагрузиться с диска; (в) запустить workflow `iso` вручную на ветке. Решить вопрос с кэшем для Quickshell и с cron в `flake-lock.yml`.
 7. Установщик: запустить `bash installer/bootstrap.sh --dry-run`, затем без флагов в ВМ с NixOS (`--software`), не на основной системе; починить по логу `~/.local/state/pixeldots-installer/install.log`.
 
 ## 4. Приложение: сырые выводы (целиком, без сокращений)
@@ -502,5 +522,251 @@ quickshell: rev 9b0f339b19057f4731bf3b48293307d7ef241671
    - https://flake.parts/options/flake-parts.html («system is not needed ... or set nixpkgs.hostPlatform in a module»)
 
 5. Нового flake input НЕ добавлялось (nixos-generators не использован): любой новый input изменил бы flake.lock, что запрещено.
+
+````
+
+### docs/logs/iso-ui-tests.txt
+
+````text
+$ make clean && make headless  (g++ -std=c++17 -Wall -Wextra)
+g++ -O2 -std=c++17 -Wall -Wextra -Isrc src/app.cpp src/main_headless.cpp -o pixeldots-installer-headless
+[make exit=0]
+
+=== regression: the existing (non-ISO) wizard ===
+
+$ tests/flow.txt
+quit=1 exit=0 screen=done
+[exit=0]
+
+$ tests/mouse.txt
+quit=1 exit=0 screen=done
+[exit=0]
+
+$ tests/fail.txt (FAKE_FAIL=1)
+quit=1 exit=1 screen=failed
+[exit=0]
+
+=== ISO mode (PD_ISO=1, fake disks, fake backend, no sudo) ===
+
+$ tests/iso-flow.txt: no default user/disk, explicit disk choice, erase confirmation resets on Back
+quit=1 exit=0 screen=done
+[exit=0]
+
+$ tests/iso-nodisk.txt FAKE_DISKS=nouefi
+quit=0 exit=0 screen=disk
+[exit=0]
+
+$ tests/iso-nodisk.txt FAKE_DISKS=none
+quit=0 exit=0 screen=disk
+[exit=0]
+
+$ tests/iso-leak.txt: backend prints a $6$ hash, it must not reach the on-screen log
+quit=1 exit=0 screen=done
+[exit=0]
+
+=== controls: the leak test must be able to fail ===
+
+$ assertnolog on text that IS in the log (expect exit 4)
+assertnolog failed for 'Installing'
+[exit=4]
+
+$ same leak test on a build WITHOUT the redaction (expect exit 4)
+assertnolog failed for 'LEAKEDHASH'
+[exit=4]
+
+````
+
+### docs/logs/iso-backend-tests.txt
+
+````text
+$ bash installer/tests/disks-test.sh   (fake lsblk/findmnt; no real disks)
+ok   - offers nvme0n1 with a clean model and exact size
+ok   - offers sda, squeezes the double blank in the model
+ok   - sanitises a hostile model string (no quote, semicolon or pipe survives)
+ok   - hides a disk under 20 GiB (sdb)
+ok   - hides the installation medium: iso9660 (sdc)
+ok   - hides a mounted disk (sdd)
+ok   - hides a disk with active swap (sdg)
+ok   - fails closed when lsblk cannot inspect a disk (sdh)
+ok   - hides rom, loop and read-only devices
+ok   - every line has exactly 5 fields
+ok   - not UEFI: one ERR line and no disks
+ok   - no disks at all: ERR line
+
+passed: 12  failed: 0
+[exit=0]
+
+$ bash installer/tests/backend-test.sh   (fake parted/mkfs/mount/nixos-install; PD_DEV_DIR and PD_MNT point into a temp dir)
+== dry run ==
+ok   - dry run succeeds
+ok   - dry run generated flake.nix and pixeldots-local.nix
+ok   - hashedPassword is a sha-512 hash
+ok   - the plaintext password is in no generated file, log or call record
+ok   - no unreplaced @PLACEHOLDER@ left
+ok   - host, user, tz, locale, layout, stateVersion substituted
+ok   - apps resolved, unfree enabled because of discord
+ok   - flake pins the ISO revision
+ok   - dry run runs no tool
+== invalid input is rejected BEFORE any command runs ==
+ok   - control: the unmodified request is accepted (so the rejections below are not vacuous)
+ok   - rejected: PD_HOSTNAME=a;b
+ok   - rejected: PD_HOSTNAME=-bad
+ok   - rejected: PD_HOSTNAME=has space
+ok   - rejected: PD_HOSTNAME=x"y
+ok   - rejected: PD_USER=Root
+ok   - rejected: PD_USER=root
+ok   - rejected: PD_USER=al"ice
+ok   - rejected: PD_USER=1abc
+ok   - rejected: PD_USER=a b
+ok   - rejected: PD_TZ=Europe/Berlin;rm
+ok   - rejected: PD_TZ=a b
+ok   - rejected: PD_LAYOUT=us;x
+ok   - rejected: PD_LAYOUT=US
+ok   - rejected: PD_LOCALE=en_US
+ok   - rejected: PD_MODE=blue
+ok   - rejected: PD_VARIANT=scheme-x;y
+ok   - rejected: PD_APPS=nope
+ok   - rejected: PD_APPS=firefox,;x
+ok   - rejected: PD_AUTOSTART=2
+ok   - rejected: PD_DISK=sda;rm
+ok   - rejected: PD_DISK=../sda
+ok   - rejected: PD_DISK_SIZE=12x
+ok   - rejected: PD_DISK_MODEL=ev"il
+ok   - rejected: password too short
+ok   - rejected: empty password
+ok   - rejected: non-ASCII password
+ok   - rejected: erase not confirmed (empty)
+ok   - rejected: confirmation for another disk
+ok   - error messages do not echo the password
+== disk re-check ==
+ok   - rejected: disk not offered by pixeldots-disks (and for that reason)
+ok   - rejected: size changed since the user chose (and for that reason)
+ok   - rejected: model changed since the user chose
+ok   - rejected: not booted in UEFI mode
+== real run with fake tools (sda) ==
+ok   - succeeds
+ok   - calls happen in the safe order
+ok   - partitioning commands target only the chosen disk
+ok   - no command mentions another disk
+ok   - mkfs on partition 1 (FAT32 ESP) and 2 (ext4)
+ok   - GPT, 1 GiB ESP, esp flag
+ok   - nixos-install uses --root, --flake path:..#host and --no-root-passwd
+ok   - config written into the target, configuration.nix removed
+ok   - the hash printed by nixos-install is hidden in the output and the log
+ok   - plaintext password nowhere
+ok   - progress markers reach 100
+== nvme naming ==
+ok   - succeeds
+ok   - partitions are nvme0n1p1 / nvme0n1p2
+ok   - sda is untouched
+== install failure ==
+ok   - fails with a clear error and does not umount as if finished
+
+passed: 58  failed: 0
+[exit=0]
+
+=== mutation checks: break the script on purpose, the tests must fail (results of the run above this log was made from) ===
+mutant [no hostname regex]: passed: 54  failed: 4
+mutant [no erase confirmation]: passed: 57  failed: 1
+mutant [no disk re-check]: passed: 57  failed: 1
+mutant [wipe before validation]: passed: 23  failed: 35
+mutant [password echoed to the log]: passed: 55  failed: 3
+restored original: passed: 58  failed: 0
+
+$ bash -n installer/*.sh installer/tests/*.sh
+ok installer/disks.sh
+ok installer/install-iso.sh
+ok installer/tests/backend-test.sh
+ok installer/tests/disks-test.sh
+ok installer/tests/fake-apply-iso.sh
+ok installer/tests/fake-apply.sh
+ok installer/tests/fake-disks.sh
+
+
+````
+
+### docs/logs/iso-workflow-and-nix-static.txt
+
+````text
+$ bash tools/test-iso-release-prep.sh   (runs the "Prepare release files" step on sparse fake ISOs; needs PyYAML)
+ok   - small ISO: ok, one ISO + SHA256SUMS, tag exported
+ok   - small ISO: notes do not mention splitting
+ok   - big ISO: ok, tag generated
+ok   - big ISO: split, no unsplit ISO left, every file under 2 GiB
+ok   - big ISO: joined parts have the checksum SHA256SUMS lists for the whole ISO
+ok   - big ISO: notes explain how to join
+ok   - bad tag refused: a b
+ok   - bad tag refused: x;rm
+ok   - bad tag refused: ../x
+ok   - bad tag refused: aaaaaaaaaaaaaaaaaaaa
+ok   - no ISO built: refused
+
+passed: 11  failed: 0
+[exit=0]
+
+$ yaml load + triggers + bash -n of every run: block
+triggers: ['workflow_dispatch']
+Free disk space bash -n ok
+Build the ISO bash -n ok
+Prepare release files bash -n ok
+Publish release bash -n ok
+
+$ python3 /tmp/nixbalance.py flake.nix nix/*.nix   (crude delimiter check, NOT a Nix parser)
+balanced  flake.nix
+balanced  nix/home.nix
+balanced  nix/installer.nix
+balanced  nix/iso.nix
+balanced  nix/nixos.nix
+balanced  nix/scripts.nix
+
+$ sha256sum -c flake.lock (hash taken before the ISO work started)
+flake.lock: OK
+flake.lock identical to 04770e9
+
+````
+
+### docs/logs/iso-live-sources.txt
+
+````text
+# Откуда взято каждое решение для live-сессии, установки и релиза (поиск: инструмент web_search, 2026-10-24/25).
+# Сеть песочницы закрыта, источники НЕ на пиннутой ревизии nixpkgs (02c087f3fe67): это те ревизии, что вернул поиск.
+# Окончательная сверка с пином возможна только настоящим `nix flake check` / `nix build` (см. PROGRESS.md).
+
+1. services.cage (автозапуск сессии вместо логина)
+   - опции services.cage.{enable,user,program,extraArguments,environment}: nixos/modules/services/wayland/cage.nix
+     https://github.com/NixOS/nixpkgs/blob/release-20.09/nixos/modules/services/wayland/cage.nix  (старая версия модуля)
+     https://mynixos.com/nixpkgs/option/services.cage.environment                                   (опция есть в актуальном nixpkgs)
+   - юнит называется cage-tty1, конфликтует с getty@tty1, PAM-сервис cage, wantedBy graphical.target (тот же файл).
+   - ОТКРЫТО: Restart-политика юнита и точный текст модуля на пине не сверены; сессия-обёртка написана так, чтобы не зависеть от неё.
+
+2. Живой пользователь nixos, sudo без пароля, автологин
+   - PR #66338 «installer/no-root»: пользователь nixos, `security.sudo.wheelNeedsPassword = false` в profiles/installation-device.nix
+     https://gitea.suzanne.soy/suzanne.soy/nixpkgs/commit/dd49cf711e3139fec2eca26f31c2ffd8b5c5873b
+   - получается, что `sudo -n` из сессии cage работает без пароля. Не проверено на живом образе.
+
+3. Установка по руководству NixOS (UEFI)
+   - порядок: parted mklabel gpt → mkpart ESP fat32 → set N esp on → mkfs.fat -F 32 -n boot → mkfs.ext4 -L nixos → mount (boot с umask=077)
+     → nixos-generate-config --root /mnt → nixos-install. boot.loader.systemd-boot.enable = true; boot.loader.efi.canTouchEfiVariables = true.
+     https://github.com/NixOS/nixpkgs/blob/8cfce968b1a3a01d74421496a643caac6f3911ad/nixos/doc/manual/installation/installing.xml
+     https://git.pub.solar/b12f/nixpkgs/commit/7fb52b1325a383b7bd83aa2552f6d9d57106d241
+   - отличие от руководства: ESP 1 GiB вместо 512 MiB (больше запас под ядра), корень вторым разделом.
+   - nixos-install --root DIR --flake URI#NAME --no-root-passwd (флаги --flake, --no-root-passwd):
+     https://www.mankier.com/8/nixos-install
+     https://github.com/NixOS/nixpkgs/blob/bb8b5735d6f7e06b9ddd27de115b0600c1ffbdb4/nixos/modules/installer/tools/nixos-install.sh
+   - раскладка: services.xserver.xkb.{layout,options}, console.useXkbConfig
+     https://wiki.nixos.org/wiki/Keyboard_Layout_Customization
+     https://git.uninsane.org/colin/nixpkgs/src/commit/60e731d1ceb7343b1d137afe6b09f3f6409d701b/nixos/modules/config/console.nix
+   - Home Manager: lib.hm.dag.entryBefore, home.activation, xdg.configFile (используются уже в nix/home.nix проекта, на пине вычисляются).
+   - Не из документации, а из своего кода: `inputs.<имя>.follows = "pixeldots/<имя>"` (документированный механизм flake follows);
+     имена входов nixpkgs/home-manager взяты из flake.nix проекта.
+
+4. GitHub Releases
+   - лимит: каждый файл релиза меньше 2 GiB, до 1000 файлов
+     https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases
+     https://fast.io/resources/github-release-file-size-limit/
+   - `gh release create <tag> <files> --target --title --notes-file --prerelease`
+     https://cli.github.com/manual/gh_release_create
+   - cachix/install-nix-action@v31 и actions/checkout@v4: те же версии, что в существующем .github/workflows/flake-lock.yml.
+   - Список каталогов для освобождения места (/usr/share/dotnet, /usr/local/lib/android, /opt/ghc, ...) общеизвестный, НЕ сверен с образом раннера.
 
 ````

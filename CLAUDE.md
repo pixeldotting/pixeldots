@@ -87,8 +87,11 @@ config/quickshell/material/  весь шелл, 64 QML-файла
   modules/                 Drawers + PanelRegion, bar/, dashboard/, launcher/, notifications/, sidebar/, osd/, session/, wallpaper/, controlcenter/, lock/, Idle, Ipc
 installer/                 bootstrap.sh, apply.sh, src/*.cpp (SDL2 UI), data/ (locales, layouts, timezones, apps.tsv, font.sdf), tests/
 tools/gen-font-sdf.py      печёт installer/data/font.sdf из TTF
+tools/test-iso-release-prep.sh  локальный тест релизного шага workflow
+installer/disks.sh, install-iso.sh  бэкенд ISO-режима (список дисков, установка)
 nix/installer.nix          пакеты pixeldots-installer (UI) и pixeldots-installer-session (cage + UI)
-nix/iso.nix                модуль live-ISO (`nixosConfigurations.iso`), этап 1
+nix/iso.nix                модуль live-ISO (`nixosConfigurations.iso`): cage-сессия с мастером
+.github/workflows/iso.yml  ручная сборка ISO и публикация в Release; flake-lock.yml ведёт flake.lock
 wallpapers/aurora.png      стартовые обои (сгенерированы кодом)
 tools/                     harness.lua, qmlcheck.js (самодельные проверки)
 docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
@@ -163,30 +166,39 @@ docs/                      M3-EXPRESSIVE.md, logs/ (сырые выводы)
 
 ## ISO (загрузочный образ, делается по этапам)
 
-Цель: загрузочный ISO NixOS, который ставит систему целиком (не только доты); собирает GitHub Actions. Четыре этапа строго по одному, после
-каждого коммит + обновлённый PROGRESS.md + сырой вывод проверок; следующий этап не начинать без отчёта по текущему:
-1. `nixosConfigurations.iso` (ядро, железо, NetworkManager, рабочий стол из `nixosModules.default`), без установщика. **Код написан, не подтверждён.**
-2. Автозапуск live-сессии: cage + GUI вместо логина. Не начато.
-3. Установка на диск (выбор диска, GPT+ESP, `nixos-install --flake`, генерация конфига). Не начато.
-4. GitHub Actions: сборка ISO, публикация в Release (не upload-artifact), отдельный шаг освобождения места. Не начато.
+Цель: загрузочный ISO NixOS, который ставит систему целиком (не только доты); собирает GitHub Actions. Статус по этапам (подробности и что проверено:
+`PROGRESS.md`, таблица «ISO»). НИ ОДИН этап не подтверждён на настоящем образе: в песочнице нет nix, qemu, KVM и сети.
+1. `nixosConfigurations.iso` (ядро, железо, NetworkManager, рабочий стол из `nixosModules.default`): вычисление первой версии подтвердил владелец (`nix flake check`).
+2. Автозапуск live-сессии: `services.cage` на tty1 запускает `pixeldots-live-session` (UI в ISO-режиме). Написано, не вычислено.
+3. Установка на диск: `installer/disks.sh` (список), `installer/install-iso.sh` (GPT + ESP 1 GiB + ext4, `nixos-generate-config`, `nixos-install --flake`),
+   экраны Disk и Erase в UI. Проверено только с поддельными утилитами.
+4. `.github/workflows/iso.yml`: только `workflow_dispatch`, шаг освобождения места, публикация через `gh release create`, нарезка если ISO >= 2 GiB. Ни разу не запускался.
 
-Жёсткие требования владельца (действуют на всех этапах): пароль только как `hashedPassword`, никогда открытым текстом в `.nix` и в логе на экране;
-hostname и имя пользователя валидируются ДО подстановки в Nix; разметка только выбранного из списка диска и только после экрана
-подтверждения с моделью и размером, никаких дефолтов «sda»; опции и API не выдумывать, а сверять с документацией и указывать источник
-(`docs/logs/iso-stage1-sources.txt`); не называть готовым непроверенное; `flake.lock` не пересоздавать и ревизии не менять, поэтому новых
-flake inputs (в т.ч. nixos-generators) не добавлять.
+Жёсткие требования владельца (действуют всегда): пароль только как `hashedPassword`, никогда открытым текстом в `.nix` и в логе на экране;
+hostname и имя пользователя проверяются ДО подстановки в Nix; разметка только выбранного из списка диска и только после экрана подтверждения
+с моделью и размером, никаких дефолтов «sda»; опции и API не выдумывать, а сверять с документацией и указывать источник
+(`docs/logs/iso-stage1-sources.txt`, `docs/logs/iso-live-sources.txt`); не называть готовым непроверенное; `flake.lock` не пересоздавать и ревизии не менять,
+поэтому новых flake inputs (в т.ч. nixos-generators) не добавлять.
 
-Решения этапа 1, которые легко «исправить» по ошибке:
-- `nix/iso.nix` импортирует `installer/cd-dvd/installation-cd-base.nix`, а НЕ `installation-cd-minimal.nix`: минимальный профиль ставит
-  `fonts.fontconfig.enable = lib.mkForce false` и `isoImage.edition = lib.mkForce "minimal"`, что ломает Qt/Hyprland-десктоп.
-- `nixpkgs.hostPlatform` задан в модуле (у `lib.nixosSystem` нет аргумента `system`). Пока только x86_64-linux.
-- Имя ISO-файла и параметры сжатия не трогаются (имена опций `isoImage.*`/`image.*` в пиннутом nixpkgs не сверены); имя для релиза даст workflow.
-- Тестовой серийной консоли в образе нет (`console=ttyS0` не добавлен): решить на этапе 2, когда понадобится лог загрузки из QEMU.
+Как это устроено (и что легко «исправить» по ошибке):
+- `nix/iso.nix` импортирует `installation-cd-base.nix`, а НЕ `installation-cd-minimal.nix`: минимальный профиль ставит `fonts.fontconfig.enable = lib.mkForce false`
+  и `isoImage.edition = lib.mkForce "minimal"`, что ломает Qt/Hyprland-десктоп. `nixpkgs.hostPlatform` задан в модуле. Имя ISO и `isoImage.*` не трогаем.
+- В образ кладутся `/etc/pixeldots/flake-url` (`github:pixeldotting/pixeldots/<self.rev>`, ревизия образа, если дерево чистое) и `/etc/pixeldots/state-version`
+  (`lib.trivial.release`). Установленная система берёт тот же код, что образ.
+- UI в ISO-режиме включается `PD_ISO=1` (его ставит `pixeldots-live-session`); обычный режим (bootstrap.sh на готовой NixOS) не менялся. UI запускает бэкенд так:
+  `sudo -n env K=V… pixeldots-install-iso` (значения не секретны), пароль идёт одной строкой в stdin. `PD_TEST_NO_SUDO=1` и `PD_DEV_DIR` существуют только для тестов.
+- Бэкенд порядок: проверка + хеш пароля, генерация конфига во временный каталог, перепроверка диска у `disks.sh` (имя, модель, размер должны совпасть, `PD_ERASE_CONFIRM = PD_DISK`),
+  только потом разметка. Не менять порядок. Диски: `disks.sh` не предлагает смонтированные, <20 GiB, носитель (iso9660/squashfs, `/iso`), read-only; если lsblk не может проверить, диск не предлагается.
+- Сгенерированный flake использует `inputs.nixpkgs.follows = "pixeldots/nixpkgs"` и `home-manager.follows`; у установленной системы нет `repoPath` (нет чекаута).
+- Известные риски: Quickshell собирается из git без бинарного кэша; лимит релиза 2 GiB; нет Wi-Fi в мастере (Ctrl+Alt+F2, nmtui); только UEFI. См. `PROGRESS.md`.
 
-Проверка этапа 1 (на машине с nix и сетью; в песочнице НЕЛЬЗЯ, там нет nix/qemu/KVM/сети, см. `docs/logs/iso-env-probe.txt`):
+Проверки (без nix): `bash installer/tests/disks-test.sh`, `bash installer/tests/backend-test.sh`, `bash tools/test-iso-release-prep.sh`, UI: `installer/tests/iso-*.txt`
+(см. «Установщик» выше; ISO-режим: `PD_ISO=1 PD_TEST_NO_SUDO=1 PD_DISKS_CMD=installer/tests/fake-disks.sh PD_APPLY=installer/tests/fake-apply-iso.sh`).
+Настоящая проверка на машине с nix и сетью:
 ```sh
+nix flake check --no-build
 nix build .#nixosConfigurations.iso.config.system.build.isoImage -L && ls -lh result/iso/*.iso
-qemu-system-x86_64 -enable-kvm -m 4096 -smp 2 -cdrom result/iso/*.iso -boot d   # команда из вики NixOS (там -m 256 для minimal; для десктопа нужно больше)
+qemu-system-x86_64 -enable-kvm -m 4096 -smp 2 -bios <OVMF.fd> -cdrom result/iso/*.iso -boot d -drive file=disk.qcow2,if=virtio   # UEFI + виртуальный диск >= 30 ГБ
 ```
 
 ## Правила для следующего агента
