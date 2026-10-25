@@ -1,0 +1,104 @@
+$ bash installer/tests/disks-test.sh   (fake lsblk/findmnt; no real disks)
+ok   - offers nvme0n1 with a clean model and exact size
+ok   - offers sda, squeezes the double blank in the model
+ok   - sanitises a hostile model string (no quote, semicolon or pipe survives)
+ok   - hides a disk under 20 GiB (sdb)
+ok   - hides the installation medium: iso9660 (sdc)
+ok   - hides a mounted disk (sdd)
+ok   - hides a disk with active swap (sdg)
+ok   - fails closed when lsblk cannot inspect a disk (sdh)
+ok   - hides rom, loop and read-only devices
+ok   - every line has exactly 5 fields
+ok   - not UEFI: one ERR line and no disks
+ok   - no disks at all: ERR line
+
+passed: 12  failed: 0
+[exit=0]
+
+$ bash installer/tests/backend-test.sh   (fake parted/mkfs/mount/nixos-install; PD_DEV_DIR and PD_MNT point into a temp dir)
+== dry run ==
+ok   - dry run succeeds
+ok   - dry run generated flake.nix and pixeldots-local.nix
+ok   - hashedPassword is a sha-512 hash
+ok   - the plaintext password is in no generated file, log or call record
+ok   - no unreplaced @PLACEHOLDER@ left
+ok   - host, user, tz, locale, layout, stateVersion substituted
+ok   - apps resolved, unfree enabled because of discord
+ok   - flake pins the ISO revision
+ok   - dry run runs no tool
+== invalid input is rejected BEFORE any command runs ==
+ok   - control: the unmodified request is accepted (so the rejections below are not vacuous)
+ok   - rejected: PD_HOSTNAME=a;b
+ok   - rejected: PD_HOSTNAME=-bad
+ok   - rejected: PD_HOSTNAME=has space
+ok   - rejected: PD_HOSTNAME=x"y
+ok   - rejected: PD_USER=Root
+ok   - rejected: PD_USER=root
+ok   - rejected: PD_USER=al"ice
+ok   - rejected: PD_USER=1abc
+ok   - rejected: PD_USER=a b
+ok   - rejected: PD_TZ=Europe/Berlin;rm
+ok   - rejected: PD_TZ=a b
+ok   - rejected: PD_LAYOUT=us;x
+ok   - rejected: PD_LAYOUT=US
+ok   - rejected: PD_LOCALE=en_US
+ok   - rejected: PD_MODE=blue
+ok   - rejected: PD_VARIANT=scheme-x;y
+ok   - rejected: PD_APPS=nope
+ok   - rejected: PD_APPS=firefox,;x
+ok   - rejected: PD_AUTOSTART=2
+ok   - rejected: PD_DISK=sda;rm
+ok   - rejected: PD_DISK=../sda
+ok   - rejected: PD_DISK_SIZE=12x
+ok   - rejected: PD_DISK_MODEL=ev"il
+ok   - rejected: password too short
+ok   - rejected: empty password
+ok   - rejected: non-ASCII password
+ok   - rejected: erase not confirmed (empty)
+ok   - rejected: confirmation for another disk
+ok   - error messages do not echo the password
+== disk re-check ==
+ok   - rejected: disk not offered by pixeldots-disks (and for that reason)
+ok   - rejected: size changed since the user chose (and for that reason)
+ok   - rejected: model changed since the user chose
+ok   - rejected: not booted in UEFI mode
+== real run with fake tools (sda) ==
+ok   - succeeds
+ok   - calls happen in the safe order
+ok   - partitioning commands target only the chosen disk
+ok   - no command mentions another disk
+ok   - mkfs on partition 1 (FAT32 ESP) and 2 (ext4)
+ok   - GPT, 1 GiB ESP, esp flag
+ok   - nixos-install uses --root, --flake path:..#host and --no-root-passwd
+ok   - config written into the target, configuration.nix removed
+ok   - the hash printed by nixos-install is hidden in the output and the log
+ok   - plaintext password nowhere
+ok   - progress markers reach 100
+== nvme naming ==
+ok   - succeeds
+ok   - partitions are nvme0n1p1 / nvme0n1p2
+ok   - sda is untouched
+== install failure ==
+ok   - fails with a clear error and does not umount as if finished
+
+passed: 58  failed: 0
+[exit=0]
+
+=== mutation checks: break the script on purpose, the tests must fail (results of the run above this log was made from) ===
+mutant [no hostname regex]: passed: 54  failed: 4
+mutant [no erase confirmation]: passed: 57  failed: 1
+mutant [no disk re-check]: passed: 57  failed: 1
+mutant [wipe before validation]: passed: 23  failed: 35
+mutant [password echoed to the log]: passed: 55  failed: 3
+restored original: passed: 58  failed: 0
+
+$ bash -n installer/*.sh installer/tests/*.sh
+ok installer/disks.sh
+ok installer/install-iso.sh
+ok installer/tests/backend-test.sh
+ok installer/tests/disks-test.sh
+ok installer/tests/fake-apply-iso.sh
+ok installer/tests/fake-apply.sh
+ok installer/tests/fake-disks.sh
+
+=== a dry-run result: generated pixeldots-local.nix (hash masked by sed for this log) ===
